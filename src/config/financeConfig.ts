@@ -63,16 +63,16 @@ export const FINANCE_CONFIG = {
   // 6. ข้อมูลช่องทางการชำระเงิน & บัญชีธนาคาร (Bank Transfer & Payment Gateway Configuration)
   paymentMethods: {
     promptPay: {
-      accountName: 'บจก. ไดรฟ์ อีอาร์พี คาร์เรนทัล',
-      promptPayNumber: '081-999-8888',
+      accountName: 'นาย เกียรติยศ ชุนเชิด',
+      promptPayNumber: '065-850-2711',
       qrApiTemplate: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=',
-      customQrImageUrl: '', // วาง URL รูป QR Code ธนาคารของคุณที่นี่ (เช่น 'https://example.com/qr.png' หรือ '/qr-code.png')
+      customQrImageUrl: '/qr-bank.png', // รูป QR Code ใน /public/qr-bank.png
     },
     bankTransfer: {
       bankName: 'ธนาคารกสิกรไทย (KBANK)',
-      accountNumber: '123-4-56789-0',
-      accountName: 'บจก. ไดรฟ์ อีอาร์พี คาร์เรนทัล',
-      branch: 'สาขาสุวรรณภูมิ',
+      accountNumber: '065-850-2711',
+      accountName: 'นาย เกียรติยศ ชุนเชิด',
+      branch: 'Macus',
     },
     creditCard: {
       enabled: true,
