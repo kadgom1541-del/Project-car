@@ -948,14 +948,14 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                         <p className="text-[11px] text-slate-600 font-semibold">
                           สแกน QR Code ด้วยแอปธนาคารใดก็ได้ ชำระยอด ฿{(grandTotal + deposit.effectiveDeposit).toLocaleString()}
                         </p>
-                        <div className="w-36 h-36 bg-slate-100 border border-slate-200 rounded-xl p-2 mx-auto flex items-center justify-center relative">
+                        <div className="w-52 bg-white border border-slate-200 rounded-xl p-2 mx-auto flex items-center justify-center relative shadow-xs">
                           <img
                             src={
                               FINANCE_CONFIG.paymentMethods.promptPay.customQrImageUrl ||
-                              `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PROMPTPAY-DRIVEERP-${grandTotal + deposit.effectiveDeposit}`
+                              `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY-DRIVEERP-${grandTotal + deposit.effectiveDeposit}`
                             }
                             alt="PromptPay QR Code"
-                            className="w-full h-full object-contain"
+                            className="w-full h-auto object-contain rounded-lg"
                           />
                         </div>
                         <div className="text-[10px] text-slate-500">

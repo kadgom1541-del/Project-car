@@ -6,6 +6,8 @@
  * ท่านสามารถแก้ไขตัวเลขในไฟล์นี้เพื่อปรับเปลี่ยน อัตราส่วนลด, เงินมัดจำ, คะแนนสะสม, VAT และค่าบริการได้ทันที
  */
 
+import qrBankImage from '../assets/images/qr_bank_promptpay_1784778370699.jpg';
+
 export const FINANCE_CONFIG = {
   // 1. อัตราส่วนลดตามระยะเวลาการเช่า (Rental Duration Tier Discounts)
   rentalTiers: {
@@ -66,7 +68,7 @@ export const FINANCE_CONFIG = {
       accountName: 'นาย เกียรติยศ ชุนเชิด',
       promptPayNumber: '065-850-2711',
       qrApiTemplate: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=',
-      customQrImageUrl: '/qr-bank.png', // รูป QR Code ใน /public/qr-bank.png
+      customQrImageUrl: qrBankImage, // รูป QR Code Bank PromptPay
     },
     bankTransfer: {
       bankName: 'ธนาคารกสิกรไทย (KBANK)',
