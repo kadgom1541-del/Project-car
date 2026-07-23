@@ -33,7 +33,13 @@ import {
   Building2,
   Upload,
   Wallet,
-  Receipt
+  Receipt,
+  Copy,
+  Award,
+  Crown,
+  Zap,
+  TrendingUp,
+  Layers
 } from 'lucide-react';
 import { Vehicle, Customer, Booking, Coupon } from '../../types/erp';
 import { UserProfile, UserRole } from '../../types/auth';
@@ -80,6 +86,227 @@ function getPromptPayQrUrl(mobile: string, amount: number) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(payload)}`;
 }
 
+import { CouponType } from '../../types/erp';
+
+export interface RewardItem {
+  id: string;
+  title: string;
+  description: string;
+  requiredPoints: number;
+  category: 'Discount' | 'Addon' | 'Gift';
+  badgeText: string;
+  iconBg: string;
+  couponTemplate?: {
+    type: CouponType;
+    discountValue: number;
+    minSpendTHB: number;
+    minDurationDays: number;
+    addonType?: Coupon['addonType'];
+  };
+}
+
+export const REWARD_CATALOG: RewardItem[] = [
+  {
+    id: 'rw-disc-100-75pts',
+    title: 'คูปองส่วนลดค่าเช่า 100 บาท',
+    description: 'แลกส่วนลดค่าเช่ารถ 100 บาท ใช้เป็นส่วนลดตรงในการจองรถทุกคัน',
+    requiredPoints: 75,
+    category: 'Discount',
+    badgeText: 'ส่วนลด ฿100 (75 Pts)',
+    iconBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    couponTemplate: {
+      type: 'FixedAmount',
+      discountValue: 100,
+      minSpendTHB: 300,
+      minDurationDays: 1,
+    },
+  },
+  {
+    id: 'rw-cash-100-100pts',
+    title: 'คูปองแทนเงินสด 100 บาท',
+    description: 'คูปองเงินสด 100 บาท ใช้แทนเงินสดในการเช่ารถได้ทันที ไม่มีขั้นต่ำ',
+    requiredPoints: 100,
+    category: 'Discount',
+    badgeText: 'คูปองเงินสด ฿100 (100 Pts)',
+    iconBg: 'bg-amber-100 text-amber-800 border-amber-300',
+    couponTemplate: {
+      type: 'FixedAmount',
+      discountValue: 100,
+      minSpendTHB: 0,
+      minDurationDays: 1,
+    },
+  },
+  {
+    id: 'rw-disc-200-150pts',
+    title: 'คูปองส่วนลดค่าเช่า 200 บาท',
+    description: 'ส่วนลดพิเศษ 200 บาท เมื่อสะสมครบ 150 แต้ม คุ้มค่าที่สุดสำหรับการจองรถ',
+    requiredPoints: 150,
+    category: 'Discount',
+    badgeText: 'ส่วนลด ฿200 (150 Pts)',
+    iconBg: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+    couponTemplate: {
+      type: 'FixedAmount',
+      discountValue: 200,
+      minSpendTHB: 800,
+      minDurationDays: 1,
+    },
+  },
+  {
+    id: 'rw-cash-200-200pts',
+    title: 'คูปองแทนเงินสด 200 บาท',
+    description: 'คูปองแทนเงินสดมูลค่า 200 บาท ใช้ชำระค่าเช่ารถหรือมัดจำโดยไม่มีเงื่อนไขขั้นต่ำ',
+    requiredPoints: 200,
+    category: 'Discount',
+    badgeText: 'คูปองเงินสด ฿200 (200 Pts)',
+    iconBg: 'bg-purple-100 text-purple-800 border-purple-300',
+    couponTemplate: {
+      type: 'FixedAmount',
+      discountValue: 200,
+      minSpendTHB: 0,
+      minDurationDays: 1,
+    },
+  },
+  {
+    id: 'rw-disc-500-350pts',
+    title: 'คูปองส่วนลดพิเศษ 500 บาท',
+    description: 'ส่วนลดระดับ VIP มูลค่า 500 บาท สำหรับใช้กับการจองรถทุกประเภท',
+    requiredPoints: 350,
+    category: 'Discount',
+    badgeText: 'ส่วนลด ฿500 (350 Pts)',
+    iconBg: 'bg-rose-100 text-rose-800 border-rose-300',
+    couponTemplate: {
+      type: 'FixedAmount',
+      discountValue: 500,
+      minSpendTHB: 1500,
+      minDurationDays: 1,
+    },
+  },
+  {
+    id: 'rw-addon-ins-120pts',
+    title: 'ฟรี! ค่าประกันภัยอุบัติเหตุความเสียหาย',
+    description: 'สิทธิ์เว้นเว้นค่าประกันภัยความเสียหายส่วนแรก (Insurance Waiver) ไม่ต้องจ่ายเพิ่ม',
+    requiredPoints: 120,
+    category: 'Addon',
+    badgeText: 'ฟรีประกัน (120 Pts)',
+    iconBg: 'bg-blue-100 text-blue-800 border-blue-300',
+    couponTemplate: {
+      type: 'AddonWaiver',
+      discountValue: 200,
+      minSpendTHB: 0,
+      minDurationDays: 1,
+      addonType: 'InsuranceDeductible',
+    },
+  },
+  {
+    id: 'rw-addon-del-150pts',
+    title: 'ฟรี! ค่าบริการจัดส่งรถถึงบ้าน / สนามบิน',
+    description: 'บริการจัดส่งและรับรถคืนถึงที่พักหรือสนามบินสุวรรณภูมิ/ดอนเมือง ฟรี',
+    requiredPoints: 150,
+    category: 'Addon',
+    badgeText: 'ฟรีจัดส่งรถ (150 Pts)',
+    iconBg: 'bg-teal-100 text-teal-800 border-teal-300',
+    couponTemplate: {
+      type: 'AddonWaiver',
+      discountValue: 300,
+      minSpendTHB: 0,
+      minDurationDays: 1,
+      addonType: 'DeliveryFee',
+    },
+  },
+];
+
+export interface TierBenefitInfo {
+  tierKey: 'Standard' | 'Silver' | 'Gold' | 'Platinum';
+  name: string;
+  badgeBg: string;
+  textColor: string;
+  borderColor: string;
+  iconBg: string;
+  minSpendTHB: number;
+  minRentalsCount: number;
+  pointsMultiplier: string;
+  discountRate: string;
+  benefits: string[];
+}
+
+export const TIER_BENEFITS_GUIDE: TierBenefitInfo[] = [
+  {
+    tierKey: 'Standard',
+    name: 'Standard Member (เริ่มต้น)',
+    badgeBg: 'bg-slate-100 text-slate-800 border-slate-300',
+    textColor: 'text-slate-900',
+    borderColor: 'border-slate-200',
+    iconBg: 'bg-slate-200 text-slate-700',
+    minSpendTHB: 0,
+    minRentalsCount: 0,
+    pointsMultiplier: '1.0x (100 บาท = 1 Pts)',
+    discountRate: 'ส่วนลดปกติ',
+    benefits: [
+      'สมัครสมาชิกฟรี รับสิทธิ์สะสมแต้มทันทีทุกออเดอร์',
+      'รับคูปองส่วนลดต้อนรับสมาชิกใหม่ 100 บาท',
+      'บริการจองและเลือกรุ่นรถยนต์ออนไลน์ตลอด 24 ชั่วโมง',
+      'สิทธิ์เข้าถึงโปรโมชันประจำเดือนของทางร้าน'
+    ],
+  },
+  {
+    tierKey: 'Silver',
+    name: 'Silver Member (ซิลเวอร์)',
+    badgeBg: 'bg-slate-200 text-slate-800 border-slate-400',
+    textColor: 'text-slate-900',
+    borderColor: 'border-slate-300',
+    iconBg: 'bg-slate-300 text-slate-800',
+    minSpendTHB: 5000,
+    minRentalsCount: 3,
+    pointsMultiplier: '1.2x (รับแต้มเพิ่ม 20%)',
+    discountRate: 'ส่วนลดประจำระดับ 5%',
+    benefits: [
+      'สะสมแต้มไวขึ้น 1.2 เท่า สำหรับทุกยอดการเช่ารถ',
+      'รับส่วนลดประจำระดับสมาชิก 5% อัตโนมัติทุกการจอง',
+      'สิทธิ์ขยายเวลาคืนรถล่าช้าฟรีได้ถึง 1 ชั่วโมง',
+      'รับโบนัสแต้มวันเกิดฟรี 50 Pts ในเดือนเกิด'
+    ],
+  },
+  {
+    tierKey: 'Gold',
+    name: 'Gold Member (โกลด์)',
+    badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
+    textColor: 'text-amber-950',
+    borderColor: 'border-amber-300',
+    iconBg: 'bg-amber-200 text-amber-800',
+    minSpendTHB: 20000,
+    minRentalsCount: 8,
+    pointsMultiplier: '1.5x (รับแต้มเพิ่ม 50%)',
+    discountRate: 'ส่วนลดประจำระดับ 10%',
+    benefits: [
+      'สะสมแต้มไวขึ้น 1.5 เท่า สำหรับทุกยอดใช้จ่าย',
+      'รับส่วนลดประจำระดับสมาชิก 10% อัตโนมัติทุกการจอง',
+      'ฟรี! บริการจัดส่งและรับรถคืนถึงที่พัก/สนามบิน 2 ครั้ง/ปี',
+      'ฟรี! ผู้ขับขี่เสริม (Additional Driver) เพิ่ม 1 ท่าน',
+      'ช่องทางบริการลูกค้า Fast-Track VIP สายด่วนพิเศษ'
+    ],
+  },
+  {
+    tierKey: 'Platinum',
+    name: 'Platinum VIP (แพลตตินัม)',
+    badgeBg: 'bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-900 border-purple-300',
+    textColor: 'text-purple-950',
+    borderColor: 'border-purple-300',
+    iconBg: 'bg-purple-200 text-purple-900',
+    minSpendTHB: 50000,
+    minRentalsCount: 15,
+    pointsMultiplier: '2.0x (รับแต้มทวีคูณ 2 เท่า!)',
+    discountRate: 'ส่วนลด VIP สูงสุด 15%',
+    benefits: [
+      'รับแต้มสะสม x2 เท่า ทุกยอดชำระเงินโดยไม่มีเงื่อนไข',
+      'ส่วนลดระดับ VIP 15% สำหรับรถยนต์ทุกรุ่นทุกหมวดหมู่',
+      'ฟรี! อัปเกรดรุ่นรถเช่าสูงขึ้น 1 Class (ขึ้นอยู่กับรถว่าง)',
+      'ฟรี! ประกันภัยคุ้มครองความเสียหายส่วนแรก (Zero Deductible)',
+      'สิทธิ์เปลี่ยนวันเดินทางหรือยกเลิกการจองฟรีแบบไม่จำกัด',
+      'บริการผู้ช่วยส่วนตัว (Personal Butler) ดูแลการจองตลอด 24 ชม.'
+    ],
+  },
+];
+
 interface CustomerStorefrontProps {
   vehicles: Vehicle[];
   customers?: Customer[];
@@ -92,6 +319,7 @@ interface CustomerStorefrontProps {
   coupons: Coupon[];
   onAddBooking?: (booking: Booking) => void;
   onCancelBooking?: (bookingId: string, forfeitDepositAmount: number, cancelReason: string) => void;
+  onRedeemReward?: (pointsCost: number, newCoupon?: Coupon) => void;
 }
 
 export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
@@ -106,10 +334,15 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
   coupons,
   onAddBooking,
   onCancelBooking,
+  onRedeemReward,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'catalog' | 'my_bookings' | 'my_coupons'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'my_bookings' | 'my_coupons' | 'redeem_points'>('catalog');
+  const [loyaltySubTab, setLoyaltySubTab] = useState<'rewards' | 'tier_guide'>('rewards');
+  const [rewardCategoryFilter, setRewardCategoryFilter] = useState<'All' | 'Discount' | 'Addon' | 'Gift'>('All');
+  const [redeemedRewardInfo, setRedeemedRewardInfo] = useState<{ reward: RewardItem; couponCode: string } | null>(null);
+  const [copiedRewardCode, setCopiedRewardCode] = useState<boolean>(false);
 
   // Customer Interactive Booking Modal State
   const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
@@ -162,6 +395,58 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
     setCardHolder(user.name.toUpperCase());
     setIsPaymentVerified(false);
     setUploadedSlipName('');
+  };
+
+  const handleRedeemItem = (reward: RewardItem) => {
+    if (!user) {
+      onOpenLogin('customer');
+      return;
+    }
+
+    const currentPoints = matchingCustomer?.pointsBalance ?? user.points ?? 0;
+    if (currentPoints < reward.requiredPoints) {
+      alert(`แต้มสะสมของคุณไม่เพียงพอ (ต้องการ ${reward.requiredPoints} Pts แต่คุณมี ${currentPoints} Pts)`);
+      return;
+    }
+
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000).toString();
+    const generatedCode = reward.couponTemplate
+      ? `RDM-${reward.couponTemplate.discountValue}-${randomSuffix}`
+      : `GIFT-${reward.requiredPoints}-${randomSuffix}`;
+
+    let newCoupon: Coupon | undefined;
+
+    if (reward.couponTemplate) {
+      newCoupon = {
+        id: `cpn-rdm-${Date.now()}`,
+        code: generatedCode,
+        name: reward.title,
+        description: reward.description,
+        type: reward.couponTemplate.type,
+        discountValue: reward.couponTemplate.discountValue,
+        minDurationDays: reward.couponTemplate.minDurationDays,
+        minSpendTHB: reward.couponTemplate.minSpendTHB,
+        blackoutDates: [],
+        applicableCategories: [],
+        usageLimitGlobal: 100,
+        usedCountGlobal: 0,
+        usageLimitPerUser: 1,
+        allowStacking: true,
+        validFrom: new Date().toISOString().split('T')[0],
+        validTo: '2027-12-31',
+        addonType: reward.couponTemplate.addonType,
+      };
+    }
+
+    if (onRedeemReward) {
+      onRedeemReward(reward.requiredPoints, newCoupon);
+    }
+
+    setCopiedRewardCode(false);
+    setRedeemedRewardInfo({
+      reward,
+      couponCode: generatedCode,
+    });
   };
 
   // Duration & Dynamic Pricing
@@ -430,11 +715,11 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
 
-        {/* Navigation Tabs (Storefront vs My Bookings) */}
-        <div className="flex items-center space-x-2 border-b border-slate-200 mb-6">
+        {/* Navigation Tabs (Storefront vs My Bookings vs My Coupons vs Redeem Points) */}
+        <div className="flex items-center space-x-2 border-b border-slate-200 mb-6 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('catalog')}
-            className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer ${
+            className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer whitespace-nowrap ${
               activeTab === 'catalog'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -447,7 +732,7 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
           {user && (
             <button
               onClick={() => setActiveTab('my_bookings')}
-              className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer ${
+              className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer whitespace-nowrap ${
                 activeTab === 'my_bookings'
                   ? 'border-indigo-600 text-indigo-600'
                   : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -460,7 +745,7 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
 
           <button
             onClick={() => setActiveTab('my_coupons')}
-            className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer ${
+            className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer whitespace-nowrap ${
               activeTab === 'my_coupons'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -468,6 +753,18 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
           >
             <Tag className="w-4 h-4" />
             <span>คูปองส่วนลดพิเศษ ({coupons.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('redeem_points')}
+            className={`flex items-center space-x-2 py-3 px-4 font-bold text-xs border-b-2 transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'redeem_points'
+                ? 'border-amber-500 text-amber-700 bg-amber-50/60 rounded-t-xl'
+                : 'border-transparent text-slate-600 hover:text-amber-600'
+            }`}
+          >
+            <Gift className="w-4 h-4 text-amber-500" />
+            <span className="font-extrabold">🎁 แลกแต้มสะสม / MemberTier </span>
           </button>
         </div>
 
@@ -776,7 +1073,507 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
           </div>
         )}
 
+        {/* REDEEM POINTS TAB */}
+        {activeTab === 'redeem_points' && (
+          <div className="space-y-6">
+            {/* Loyalty Dashboard Banner */}
+            <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 shadow-xl border border-indigo-500/30 relative overflow-hidden">
+              <div className="absolute -right-12 -top-12 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div>
+                  <div className="inline-flex items-center space-x-2 bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-extrabold px-3 py-1 rounded-full mb-3">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>DriveCar Club Loyalty Rewards</span>
+                  </div>
+                  <h2 className="text-2xl font-black tracking-tight text-white flex items-center space-x-2">
+                    <span>ศูนย์แลกแต้มสะสมและสิทธิพิเศษตามระดับสมาชิก</span>
+                  </h2>
+                  <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                    เช่ารถทุกครั้งรับแต้มสะสมทันที (ทุก 100 บาท = 1 Pts) พร้อมรับสิทธิ์รับแต้มคูณสูงสุด 2.0x และส่วนลดประจำระดับสมาชิกสูงสุด 15%!
+                  </p>
+                </div>
+
+                {/* Points Card */}
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 w-full md:w-72 shrink-0 text-center">
+                  <span className="text-[11px] text-slate-300 font-medium block">แต้มสะสมของคุณในขณะนี้</span>
+                  <div className="text-3xl font-black text-amber-400 my-1 flex items-center justify-center space-x-1">
+                    <Award className="w-7 h-7 text-amber-400" />
+                    <span>{matchingCustomer?.pointsBalance ?? user?.points ?? 0}</span>
+                    <span className="text-sm font-bold text-slate-300 ml-1">Pts</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-slate-300 border-t border-white/10 pt-2 mt-2">
+                    <span>ระดับสมาชิก: <strong className="text-amber-300 font-extrabold">{matchingCustomer?.tier || user?.tier || 'Standard'}</strong></span>
+                    {!user ? (
+                      <button
+                        onClick={() => onOpenLogin('customer')}
+                        className="text-amber-300 font-bold hover:underline cursor-pointer"
+                      >
+                        เข้าสู่ระบบ
+                      </button>
+                    ) : (
+                      <span className="text-slate-400">เช่าสะสม {matchingCustomer?.totalRentalsCount ?? 0} ครั้ง</span>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => setLoyaltySubTab(loyaltySubTab === 'rewards' ? 'tier_guide' : 'rewards')}
+                    className="mt-3 w-full bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40 text-[11px] font-extrabold py-1.5 rounded-xl transition flex items-center justify-center space-x-1 cursor-pointer"
+                  >
+                    <Crown className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{loyaltySubTab === 'rewards' ? 'ดูเงื่อนไขอัปเกรดระดับสมาชิก >' : 'ดูแคตตาล็อกของรางวัล >'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub Navigation Bar inside Loyalty Hub */}
+            <div className="flex items-center space-x-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+              <button
+                onClick={() => setLoyaltySubTab('rewards')}
+                className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center space-x-2 ${
+                  loyaltySubTab === 'rewards'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Gift className="w-4 h-4 text-amber-500" />
+                <span>🎁 แคตตาล็อกแลกของรางวัล</span>
+              </button>
+
+              <button
+                onClick={() => setLoyaltySubTab('tier_guide')}
+                className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center space-x-2 ${
+                  loyaltySubTab === 'tier_guide'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Crown className="w-4 h-4 text-slate-900" />
+                <span>👑 ระดับสมาชิก & เงื่อนไขการอัปเกรด (Member Tiers)</span>
+              </button>
+            </div>
+
+            {/* TAB 1: REWARDS CATALOG */}
+            {loyaltySubTab === 'rewards' && (
+              <div className="space-y-6">
+                {/* Filter Pills for Reward Categories */}
+                <div className="flex items-center justify-between flex-wrap gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                  <div className="flex items-center space-x-2">
+                    <Tag className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-bold text-slate-800">หมวดหมู่ของรางวัล:</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5 overflow-x-auto scrollbar-none">
+                    {[
+                      { key: 'All', label: 'ทั้งหมด' },
+                      { key: 'Discount', label: 'ส่วนลดค่าเช่ารถ' },
+                      { key: 'Addon', label: 'สิทธิพิเศษ/บริการเสริม' },
+                    ].map((f) => (
+                      <button
+                        key={f.key}
+                        onClick={() => setRewardCategoryFilter(f.key as any)}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                          rewardCategoryFilter === f.key
+                            ? 'bg-amber-500 text-slate-950 shadow-xs font-extrabold'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Rewards Catalog Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {REWARD_CATALOG.filter(
+                    (item) => rewardCategoryFilter === 'All' || item.category === rewardCategoryFilter
+                  ).map((reward) => {
+                    const currentPoints = matchingCustomer?.pointsBalance ?? user?.points ?? 0;
+                    const canRedeem = !!user && currentPoints >= reward.requiredPoints;
+                    const pointsNeeded = reward.requiredPoints - currentPoints;
+
+                    return (
+                      <div
+                        key={reward.id}
+                        className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col justify-between shadow-xs hover:shadow-md transition relative overflow-hidden group"
+                      >
+                        <div>
+                          {/* Top Required Points Badge */}
+                          <div className="flex items-center justify-between mb-3">
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border ${reward.iconBg}`}>
+                              {reward.badgeText}
+                            </span>
+                            <div className="flex items-center space-x-1 text-xs font-black text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                              <Gift className="w-3.5 h-3.5" />
+                              <span>{reward.requiredPoints} Pts</span>
+                            </div>
+                          </div>
+
+                          <h3 className="font-bold text-sm text-slate-900 group-hover:text-indigo-600 transition">
+                            {reward.title}
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                            {reward.description}
+                          </p>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                          <p className="text-[10px] text-slate-400">
+                            {reward.couponTemplate
+                              ? `ใช้ขั้นต่ำ ฿${reward.couponTemplate.minSpendTHB.toLocaleString()} | หมดอายุ 31 ธ.ค. 2027`
+                              : 'รับสินค้าได้ที่สาขาเมื่อเข้าใช้บริการเช่ารถ'}
+                          </p>
+
+                          {!user ? (
+                            <button
+                              onClick={() => onOpenLogin('customer')}
+                              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2 rounded-xl transition cursor-pointer"
+                            >
+                              เข้าสู่ระบบเพื่อแลก
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleRedeemItem(reward)}
+                              disabled={!canRedeem}
+                              className={`w-full text-xs font-bold py-2.5 rounded-xl transition flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer ${
+                                canRedeem
+                                  ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold shadow-amber-500/20'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                              }`}
+                            >
+                              <Gift className="w-4 h-4" />
+                              <span>
+                                {canRedeem
+                                  ? 'กดแลกรางวัลนี้'
+                                  : `แต้มไม่พอ (ขาดอีก ${pointsNeeded} Pts)`}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: MEMBER TIERS UPGRADE GUIDE */}
+            {loyaltySubTab === 'tier_guide' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                {/* User Current Tier Status & Upgrade Progress */}
+                {user && (
+                  <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-amber-100 border border-amber-300 rounded-2xl flex items-center justify-center text-amber-700 shadow-xs">
+                          <Crown className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-slate-500 font-medium">ระดับสมาชิกของคุณ:</span>
+                            <span className="bg-amber-400 text-slate-950 text-xs font-black px-2.5 py-0.5 rounded-full border border-amber-500">
+                              {matchingCustomer?.tier || user?.tier || 'Standard'}
+                            </span>
+                          </div>
+                          <h3 className="text-base font-extrabold text-slate-900 mt-0.5">
+                            {matchingCustomer?.fullName || user.name}
+                          </h3>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-6 text-xs text-slate-600 bg-slate-50 px-4 py-2.5 rounded-2xl border border-slate-200/80 w-full md:w-auto justify-around">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">ยอดเช่าสะสม</span>
+                          <span className="font-extrabold text-slate-900 text-sm">
+                            ฿{(matchingCustomer?.totalSpentTHB ?? 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="w-px h-8 bg-slate-200" />
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">จำนวนครั้งเช่า</span>
+                          <span className="font-extrabold text-indigo-600 text-sm">
+                            {matchingCustomer?.totalRentalsCount ?? 0} ครั้ง
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress to Next Tier */}
+                    {(() => {
+                      const userSpent = matchingCustomer?.totalSpentTHB ?? 0;
+                      const userRentals = matchingCustomer?.totalRentalsCount ?? 0;
+                      const currentTier = matchingCustomer?.tier ?? user?.tier ?? 'Standard';
+
+                      let nextTierName = 'Silver';
+                      let targetSpend = 5000;
+                      let targetRentals = 3;
+
+                      if (currentTier === 'Silver') {
+                        nextTierName = 'Gold';
+                        targetSpend = 20000;
+                        targetRentals = 8;
+                      } else if (currentTier === 'Gold') {
+                        nextTierName = 'Platinum VIP';
+                        targetSpend = 50000;
+                        targetRentals = 15;
+                      } else if (currentTier === 'Platinum') {
+                        nextTierName = 'VIP Max Tier';
+                        targetSpend = 50000;
+                        targetRentals = 15;
+                      }
+
+                      const spendPct = Math.min(100, Math.round((userSpent / targetSpend) * 100));
+                      const rentalPct = Math.min(100, Math.round((userRentals / targetRentals) * 100));
+                      const maxProgressPct = currentTier === 'Platinum' ? 100 : Math.max(spendPct, rentalPct);
+
+                      const remSpend = Math.max(0, targetSpend - userSpent);
+                      const remRentals = Math.max(0, targetRentals - userRentals);
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-bold text-slate-700 flex items-center space-x-1">
+                              <TrendingUp className="w-4 h-4 text-indigo-600" />
+                              <span>ความคืบหน้าสู่ระดับต่อไป: <strong>{nextTierName}</strong></span>
+                            </span>
+                            <span className="font-extrabold text-indigo-600">{maxProgressPct}%</span>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200 p-0.5">
+                            <div
+                              className="bg-gradient-to-r from-amber-400 via-indigo-500 to-purple-600 h-full rounded-full transition-all duration-500 shadow-xs"
+                              style={{ width: `${maxProgressPct}%` }}
+                            />
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
+                            {currentTier === 'Platinum' ? (
+                              <span className="text-emerald-600 font-extrabold flex items-center space-x-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>คุณอยู่ในระดับสูงสุด Platinum VIP แล้ว! เพลิดเพลินกับสิทธิประโยชน์ x2 แต้มสะสมและส่วนลด 15%</span>
+                              </span>
+                            ) : (
+                              <span>
+                                💡 อีกเพียง <strong className="text-indigo-600">฿{remSpend.toLocaleString()}</strong> บาท หรือ เช่ารถเพิ่มอีก <strong className="text-indigo-600">{remRentals} ครั้ง</strong> เพื่อปรับเป็นระดับ <strong>{nextTierName}</strong> อัตโนมัติ!
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Tier Benefits Cards Grid */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-extrabold text-slate-900 flex items-center space-x-2">
+                      <Crown className="w-5 h-5 text-amber-500" />
+                      <span>ระดับสมาชิกและสิทธิประโยชน์ (Member Tiers & Benefits)</span>
+                    </h3>
+                    <span className="text-xs text-slate-500 font-medium">ปรับระดับให้อัตโนมัติเมื่อครบเกณฑ์</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {TIER_BENEFITS_GUIDE.map((tier) => {
+                      const isCurrentTier = (matchingCustomer?.tier || user?.tier || 'Standard') === tier.tierKey;
+
+                      return (
+                        <div
+                          key={tier.tierKey}
+                          className={`bg-white rounded-3xl border ${tier.borderColor} p-5 flex flex-col justify-between shadow-xs hover:shadow-md transition relative overflow-hidden ${
+                            isCurrentTier ? 'ring-2 ring-amber-500 ring-offset-2' : ''
+                          }`}
+                        >
+                          {isCurrentTier && (
+                            <div className="absolute top-0 right-0 bg-amber-500 text-slate-950 text-[10px] font-black px-3 py-1 rounded-bl-xl shadow-xs">
+                              ระดับปัจจุบันของคุณ
+                            </div>
+                          )}
+
+                          <div>
+                            {/* Tier Badge & Name */}
+                            <div className="flex items-center space-x-2 mb-3">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm ${tier.iconBg}`}>
+                                <Crown className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className={`font-black text-sm ${tier.textColor}`}>{tier.name}</h4>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  {tier.minSpendTHB === 0
+                                    ? 'สำหรับสมาชิกใหม่'
+                                    : `ยอดเช่า ฿${tier.minSpendTHB.toLocaleString()} หรือ ${tier.minRentalsCount} ครั้ง`}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Key Rates */}
+                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 my-3 space-y-1 text-xs">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[11px] text-slate-500">อัตราสะสมแต้ม:</span>
+                                <span className="font-extrabold text-indigo-600">{tier.pointsMultiplier}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-t border-slate-200/60 pt-1">
+                                <span className="text-[11px] text-slate-500">ส่วนลดประจำระดับ:</span>
+                                <span className="font-extrabold text-emerald-600">{tier.discountRate}</span>
+                              </div>
+                            </div>
+
+                            {/* Benefits List */}
+                            <div className="space-y-2 mt-4">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                                สิทธิประโยชน์ที่คุณจะได้รับ:
+                              </span>
+                              {tier.benefits.map((benefit, idx) => (
+                                <div key={idx} className="flex items-start space-x-2 text-xs text-slate-700">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                                  <span className="leading-tight">{benefit}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="mt-5 pt-3 border-t border-slate-100 text-[11px] text-slate-400 font-medium text-center">
+                            {tier.minSpendTHB === 0
+                              ? 'ฟรีไม่มีค่าใช้จ่าย'
+                              : `ยอดเช่าสะสมครบ ฿${tier.minSpendTHB.toLocaleString()}`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* How to Upgrade Step-by-Step Guide */}
+                <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md border border-slate-800 space-y-4">
+                  <h3 className="text-sm font-extrabold text-amber-400 flex items-center space-x-2">
+                    <Sparkles className="w-4 h-4" />
+                    <span>วิธีสะสมยอดและอัปเกรดระดับสมาชิก (How to Level Up)</span>
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1.5">
+                      <div className="w-7 h-7 bg-amber-400 text-slate-950 font-black rounded-xl flex items-center justify-center text-xs mb-2">
+                        1
+                      </div>
+                      <h4 className="font-bold text-white text-sm">1. เช่ารถและชำระเงิน</h4>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        เลือกจองรถยนต์รุ่นใดก็ได้ผ่านหน้าเว็บ และชำระเงินค่ายอดเช่าจนเสร็จสิ้น
+                      </p>
+                    </div>
+
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1.5">
+                      <div className="w-7 h-7 bg-indigo-400 text-slate-950 font-black rounded-xl flex items-center justify-center text-xs mb-2">
+                        2
+                      </div>
+                      <h4 className="font-bold text-white text-sm">2. สะสมยอดอัตโนมัติ</h4>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        ระบบจะนำยอดเงินและจำนวนครั้งมาบันทึกสะสมเข้าสู่บัญชีของคุณทันทีเมื่อเริ่มสัญญาเช่า
+                      </p>
+                    </div>
+
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1.5">
+                      <div className="w-7 h-7 bg-emerald-400 text-slate-950 font-black rounded-xl flex items-center justify-center text-xs mb-2">
+                        3
+                      </div>
+                      <h4 className="font-bold text-white text-sm">3. อัปเกรดและรับสิทธิ์ทันที</h4>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        เมื่อยอดเช่าสะสมหรือจำนวนครั้งครบเกณฑ์ ระบบจะปรับระดับสมาชิกและมอบส่วนลดให้อัตโนมัติ!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
       </main>
+
+      {/* REDEMPTION SUCCESS MODAL */}
+      {redeemedRewardInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full p-6 text-center relative overflow-hidden">
+            <button
+              onClick={() => setRedeemedRewardInfo(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-16 h-16 bg-amber-100 border border-amber-300 rounded-2xl flex items-center justify-center mx-auto mb-4 text-amber-600 shadow-md">
+              <Gift className="w-9 h-9 animate-bounce" />
+            </div>
+
+            <span className="bg-amber-100 text-amber-800 text-[11px] font-extrabold px-3 py-1 rounded-full">
+              🎉 แลกรางวัลสำเร็จแล้ว!
+            </span>
+
+            <h3 className="text-lg font-extrabold text-slate-900 mt-2">
+              {redeemedRewardInfo.reward.title}
+            </h3>
+
+            <p className="text-xs text-slate-500 mt-1">
+              หักแต้มสะสมออก {redeemedRewardInfo.reward.requiredPoints} Pts • แต้มคงเหลือ {matchingCustomer?.pointsBalance ?? user?.points ?? 0} Pts
+            </p>
+
+            {/* Code Box */}
+            <div className="bg-slate-900 text-white rounded-2xl p-4 my-5 border border-slate-800 relative">
+              <span className="text-[10px] text-slate-400 block mb-1">รหัสคูปอง/วอเชอร์ของคุณ</span>
+              <div className="font-mono text-xl font-black text-amber-400 tracking-wider">
+                {redeemedRewardInfo.couponCode}
+              </div>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(redeemedRewardInfo.couponCode);
+                  setCopiedRewardCode(true);
+                  setTimeout(() => setCopiedRewardCode(false), 2000);
+                }}
+                className="mt-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2 rounded-xl transition flex items-center justify-center space-x-1.5 mx-auto cursor-pointer"
+              >
+                {copiedRewardCode ? (
+                  <>
+                    <Check className="w-4 h-4 text-slate-950" />
+                    <span>คัดลอกรหัสแล้ว!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>คัดลอกรหัสคูปอง</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-500 mb-6 bg-amber-50 p-3 rounded-xl border border-amber-200 text-left leading-relaxed">
+              💡 <strong>คำแนะนำ:</strong> รหัสนี้ถูกเพิ่มลงในหน้า <strong>"คูปองส่วนลดพิเศษ"</strong> ของคุณแล้วเรียบร้อย สามารถนำไปกรอกในช่องส่วนลดเพื่อประหยัดค่าเช่ารถได้ทันที!
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setRedeemedRewardInfo(null);
+                  setActiveTab('my_coupons');
+                }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs py-2.5 rounded-xl transition cursor-pointer"
+              >
+                ดูคูปองทั้งหมด
+              </button>
+              <button
+                onClick={() => {
+                  setRedeemedRewardInfo(null);
+                  setActiveTab('catalog');
+                }}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 rounded-xl transition cursor-pointer"
+              >
+                ไปเลือกรถเช่าทันที
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CUSTOMER STOREFRONT BOOKING MODAL */}
       {bookingVehicle && (

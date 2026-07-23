@@ -360,6 +360,43 @@ export default function App() {
     setJournalEntries((prev) => [cancelJe, ...prev]);
   };
 
+  const handleRedeemReward = (pointsCost: number, newCoupon?: Coupon) => {
+    // 1. Deduct points from active customer
+    if (currentUser) {
+      setCustomers((prev) =>
+        prev.map((c) => {
+          if (
+            c.email === currentUser.email ||
+            c.fullName.includes(currentUser.name) ||
+            c.id === currentUser.id
+          ) {
+            return {
+              ...c,
+              pointsBalance: Math.max(0, c.pointsBalance - pointsCost),
+            };
+          }
+          return c;
+        })
+      );
+
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        points: Math.max(0, (currentUser.points || 0) - pointsCost),
+      };
+      setCurrentUser(updatedUser);
+      try {
+        localStorage.setItem('app_user_profile', JSON.stringify(updatedUser));
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 2. Add new coupon to system if redeemed
+    if (newCoupon) {
+      setCoupons((prev) => [newCoupon, ...prev]);
+    }
+  };
+
   const handleAddWorkOrder = (wo: MaintenanceWorkOrder) => {
     setWorkOrders([wo, ...workOrders]);
     handleUpdateVehicleStatus(wo.vehicleId, 'Maintenance');
@@ -498,6 +535,7 @@ export default function App() {
           coupons={coupons}
           onAddBooking={handleAddBooking}
           onCancelBooking={handleCancelBooking}
+          onRedeemReward={handleRedeemReward}
         />
       ) : (
         /* Owner & Staff DriveERP Admin View */
