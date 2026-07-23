@@ -30,7 +30,7 @@ export const FINANCE_CONFIG = {
 
   // 2. เงินมัดจำประกันความเสียหายตามประเภทรถ (Security Deposits by Category in THB)
   securityDepositByCategory: {
-    'Sedan 1.5L': 3000,
+    'Sedan 1.5L': 1,
     'Compact': 3000,
     'SUV': 5000,
     'EV / Eco': 5000,
@@ -67,12 +67,14 @@ export const FINANCE_CONFIG = {
     promptPay: {
       accountName: 'นาย เกียรติยศ ชุนเชิด',
       promptPayNumber: '065-850-2711',
+      accountNumberMasked: 'xxx-x-x7437-x',
+      refNo: '004999222186800',
       qrApiTemplate: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=',
       customQrImageUrl: qrBankImage, // รูป QR Code Bank PromptPay
     },
     bankTransfer: {
       bankName: 'ธนาคารกสิกรไทย (KBANK)',
-      accountNumber: '065-850-2711',
+      accountNumber: '2148574378',
       accountName: 'นาย เกียรติยศ ชุนเชิด',
       branch: 'Macus',
     },

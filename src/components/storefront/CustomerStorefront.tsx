@@ -45,6 +45,40 @@ import {
 } from '../../utils/erpEngine';
 import { FINANCE_CONFIG } from '../../config/financeConfig';
 import { SignaturePad } from '../common/SignaturePad';
+import { getVehicleActiveRentalInfo, checkBookingConflict } from '../../utils/bookingConflictChecker';
+import { CancelBookingModal } from '../booking/CancelBookingModal';
+import { XCircle, RotateCcw } from 'lucide-react';
+
+function getPromptPayQrUrl(mobile: string, amount: number) {
+  const crc16 = (data: string) => {
+    let crc = 0xFFFF;
+    for (let i = 0; i < data.length; i++) {
+      crc ^= data.charCodeAt(i) << 8;
+      for (let j = 0; j < 8; j++) {
+        if (crc & 0x8000) crc = (crc << 1) ^ 0x1021;
+        else crc = (crc << 1);
+        crc &= 0xFFFF;
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  };
+
+  const cleanMobile = mobile.replace(/[^0-9]/g, '');
+  const formattedMobile = '0066' + cleanMobile.replace(/^0/, '');
+  const targetLength = ('00' + formattedMobile.length).slice(-2);
+  const targetField = '01' + targetLength + formattedMobile;
+  const ppPayload = '0016A000000677010111' + targetField;
+  
+  let payload = '000201010211' + '29' + ('00' + ppPayload.length).slice(-2) + ppPayload + '5802TH5303764';
+  if (amount && amount > 0) {
+    const amtStr = Number(amount).toFixed(2);
+    payload += '54' + ('00' + amtStr.length).slice(-2) + amtStr;
+  }
+  payload += '6304';
+  payload += crc16(payload);
+  
+  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(payload)}`;
+}
 
 interface CustomerStorefrontProps {
   vehicles: Vehicle[];
@@ -57,6 +91,7 @@ interface CustomerStorefrontProps {
   bookings: Booking[];
   coupons: Coupon[];
   onAddBooking?: (booking: Booking) => void;
+  onCancelBooking?: (bookingId: string, forfeitDepositAmount: number, cancelReason: string) => void;
 }
 
 export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
@@ -70,12 +105,14 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
   bookings,
   coupons,
   onAddBooking,
+  onCancelBooking,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'catalog' | 'my_bookings' | 'my_coupons'>('catalog');
 
   // Customer Interactive Booking Modal State
+  const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
   const [startDate, setStartDate] = useState<string>('2026-08-01');
   const [endDate, setEndDate] = useState<string>('2026-08-08'); // Default 7 days to trigger weekly discount rate
@@ -202,9 +239,19 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
     }
   };
 
+  const dateConflict = bookingVehicle
+    ? checkBookingConflict(bookingVehicle.id, startDate, endDate, bookings)
+    : { hasConflict: false, conflictingBooking: null, message: '' };
+
   const handleConfirmBooking = (e: React.FormEvent) => {
     e.preventDefault();
     if (!bookingVehicle || !user) return;
+
+    // Double Booking Anti-Overlapping Protection
+    if (dateConflict.hasConflict) {
+      alert(`⚠️ ระบบป้องกันการเช่ารถซ้อน!\n\n${dateConflict.message}\n\nกรุณาเปลี่ยนวันเช่าเป็นช่วงที่รถคันนี้ว่าง`);
+      return;
+    }
 
     // Strict Deposit Payment Verification
     if (paymentMethod === 'bank_transfer' && !uploadedSlipName) {
@@ -298,7 +345,7 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                 <div className="text-right hidden md:block">
                   <p className="text-xs font-bold text-white leading-tight">{user.name}</p>
                   <p className="text-[10px] text-amber-400 font-medium">
-                    {user.tier || 'Member'} • แต้มสะสม: {user.points || 0} Pts
+                    {matchingCustomer?.tier || user.tier || 'Standard'} • แต้มสะสม: {matchingCustomer?.pointsBalance ?? user.points ?? 0} Pts
                   </p>
                 </div>
                 {user.avatarUrl ? (
@@ -368,11 +415,11 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                 <p className="text-white font-bold">{user.name}</p>
                 <div className="flex justify-between text-slate-300 text-[11px]">
                   <span>ระดับสมาชิก:</span>
-                  <span className="font-bold text-amber-400">{user.tier || 'Silver'}</span>
+                  <span className="font-bold text-amber-400">{matchingCustomer?.tier || user.tier || 'Standard'}</span>
                 </div>
                 <div className="flex justify-between text-slate-300 text-[11px]">
                   <span>คะแนนสะสมคงเหลือ:</span>
-                  <span className="font-bold text-emerald-400">{user.points || 0} แต้ม</span>
+                  <span className="font-bold text-emerald-400">{matchingCustomer?.pointsBalance ?? user.points ?? 0} แต้ม</span>
                 </div>
               </div>
             </div>
@@ -462,79 +509,119 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
             </div>
 
             {/* Vehicle Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredVehicles.map((vehicle) => (
-                <div
-                  key={vehicle.id}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between group"
-                >
-                  <div>
-                    {/* Vehicle Image */}
-                    <div className="relative h-48 bg-slate-100 overflow-hidden">
-                      <img
-                        src={vehicle.imageUrl || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80'}
-                        alt={vehicle.model}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                      />
-                      <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">
-                        {vehicle.category}
-                      </span>
-                      <span className={`absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-lg border ${
-                        vehicle.status === 'Available'
-                          ? 'bg-emerald-500 text-white border-emerald-400'
-                          : 'bg-amber-500 text-white border-amber-400'
-                      }`}>
-                        {vehicle.status === 'Available' ? 'พร้อมให้เช่า' : 'เช่าอยู่'}
-                      </span>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredVehicles.map((vehicle) => {
+                const rentalInfo = getVehicleActiveRentalInfo(vehicle, bookings);
+                const weeklyRateEst = Math.round(vehicle.dailyRate * 7 * 0.85);
+                const monthlyRateEst = Math.round(vehicle.dailyRate * 30 * 0.65);
 
-                    {/* Content Details */}
-                    <div className="p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-base">
-                            {vehicle.brand} {vehicle.model}
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            ปี {vehicle.year} • สี{vehicle.color} • ทะเบียน {vehicle.plateNumber} ({vehicle.province})
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl text-slate-600 my-3">
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">เชื้อเพลิง:</span>
-                          <span className="font-semibold text-slate-800">{vehicle.fuelType}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">เลขไมล์ปัจจุบัน:</span>
-                          <span className="font-semibold text-slate-800">{vehicle.currentOdometer.toLocaleString()} กม.</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Pricing and Action Footer */}
-                  <div className="px-4 pb-4 pt-2 border-t border-slate-100 flex items-center justify-between">
+                return (
+                  <div
+                    key={vehicle.id}
+                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between group relative"
+                  >
                     <div>
-                      <span className="text-[10px] text-slate-400 block">อัตราค่าเช่าเริ่มต้น</span>
-                      <span className="text-lg font-extrabold text-indigo-600">
-                        ฿{vehicle.dailyRate.toLocaleString()}
-                      </span>
-                      <span className="text-[10px] text-slate-500"> / วัน</span>
+                      {/* Vehicle Image */}
+                      <div className="relative h-48 bg-slate-100 overflow-hidden">
+                        <img
+                          src={vehicle.imageUrl || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80'}
+                          alt={vehicle.model}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                        <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">
+                          {vehicle.category}
+                        </span>
+
+                        {/* Rental Status Badge */}
+                        <span className={`absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 shadow-xs ${
+                          rentalInfo.isRentedOrReserved
+                            ? 'bg-rose-600 text-white border-rose-500'
+                            : 'bg-emerald-600 text-white border-emerald-500'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${rentalInfo.isRentedOrReserved ? 'bg-amber-300 animate-pulse' : 'bg-white'}`}></span>
+                          <span>{rentalInfo.isRentedOrReserved ? 'เช่าแล้ว' : 'พร้อมให้เช่า'}</span>
+                        </span>
+                      </div>
+
+                      {/* Content Details */}
+                      <div className="p-4 space-y-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-base">
+                              {vehicle.brand} {vehicle.model}
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                              ปี {vehicle.year} • สี{vehicle.color} • ทะเบียน {vehicle.plateNumber} ({vehicle.province})
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Remaining Rental Days Banner (If currently rented) */}
+                        {rentalInfo.isRentedOrReserved && (
+                          <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-xs text-rose-800 flex items-center space-x-2">
+                            <Clock className="w-4 h-4 text-rose-600 shrink-0 animate-spin-slow" />
+                            <div className="leading-tight">
+                              <span className="font-bold block">
+                                ถูกเช่าอยู่ — ระยะเวลาเหลืออีก <span className="text-rose-700 font-extrabold text-sm">{rentalInfo.remainingDays} วัน</span>
+                              </span>
+                              <span className="text-[10px] text-rose-600">
+                                กำหนดคืนรถวันที่ {rentalInfo.returnDateFormatted}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl text-slate-600">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">เชื้อเพลิง:</span>
+                            <span className="font-semibold text-slate-800">{vehicle.fuelType}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">เลขไมล์ปัจจุบัน:</span>
+                            <span className="font-semibold text-slate-800">{vehicle.currentOdometer.toLocaleString()} กม.</span>
+                          </div>
+                        </div>
+
+                        {/* Pricing Tiers breakdown display */}
+                        <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-2 text-[11px] space-y-1">
+                          <div className="flex justify-between text-slate-600">
+                            <span>อัตราเช่าสัปดาห์ (Weekly -15%):</span>
+                            <span className="font-bold text-indigo-700">฿{weeklyRateEst.toLocaleString()} / สัปดาห์</span>
+                          </div>
+                          <div className="flex justify-between text-slate-600">
+                            <span>อัตราเช่าเดือน (Monthly -35%):</span>
+                            <span className="font-bold text-purple-700">฿{monthlyRateEst.toLocaleString()} / เดือน</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <button
-                      onClick={() => handleStartBooking(vehicle)}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center space-x-1.5 shadow-sm shadow-indigo-600/20"
-                    >
-                      <Calendar className="w-4 h-4" />
-                      <span>จองคันนี้</span>
-                    </button>
-                  </div>
+                    {/* Pricing and Action Footer */}
+                    <div className="px-4 pb-4 pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">อัตราค่าเช่าฐาน</span>
+                        <span className="text-lg font-extrabold text-indigo-600">
+                          ฿{vehicle.dailyRate.toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-slate-500"> / วัน</span>
+                      </div>
 
-                </div>
-              ))}
+                      <button
+                        onClick={() => handleStartBooking(vehicle)}
+                        className={`text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center space-x-1.5 shadow-sm ${
+                          rentalInfo.isRentedOrReserved
+                            ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20'
+                        }`}
+                      >
+                        <Calendar className="w-4 h-4" />
+                        <span>{rentalInfo.isRentedOrReserved ? `จองล่วงหน้า (คิวว่าง ${rentalInfo.returnDateFormatted})` : 'จองคันนี้'}</span>
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -561,34 +648,84 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
             ) : (
               <div className="space-y-4">
                 {myBookings.map((b) => (
-                  <div key={b.id} className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                      <div className="flex items-center space-x-2 mb-1">
+                  <div key={b.id} className={`border rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition ${
+                    b.status === 'Cancelled' ? 'bg-slate-100/70 border-slate-300 opacity-90' : 'bg-white border-slate-200 shadow-xs'
+                  }`}>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center space-x-2">
                         <span className="font-mono text-xs font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
                           {b.bookingCode}
                         </span>
-                        <span className="text-xs font-bold text-slate-900">{b.vehicleModel} ({b.vehiclePlate})</span>
+                        <span className="text-sm font-bold text-slate-900">{b.vehicleModel} ({b.vehiclePlate})</span>
+                        
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                          b.status === 'Cancelled'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : b.status === 'Active'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {b.status === 'Cancelled' ? 'ยกเลิกการจองแล้ว' : b.status}
+                        </span>
                       </div>
+
                       <p className="text-xs text-slate-600">
-                        ระยะเวลา: {b.startDate} ถึง {b.endDate} ({b.totalDays} วัน)
+                        ระยะเวลาเช่า: <span className="font-semibold">{b.startDate} ถึง {b.endDate} ({b.totalDays} วัน)</span>
                       </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
+                      <p className="text-[11px] text-slate-500">
                         สถานที่รับรถ: {b.pickupBranch} | คืนรถ: {b.dropoffBranch}
                       </p>
-                      <div className="mt-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>เงินมัดจำประกันความเสียหาย: ฿{b.depositAmount.toLocaleString()} (คืนเงินเมื่อส่งมอบรถ)</span>
+
+                      {/* Loyalty points info */}
+                      <div className="flex items-center space-x-2 text-xs pt-0.5">
+                        <span className={`px-2 py-0.5 rounded-md font-bold text-[11px] flex items-center space-x-1 ${
+                          b.status === 'Cancelled'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-800 border border-amber-200'
+                        }`}>
+                          <Gift className="w-3.5 h-3.5 text-amber-600" />
+                          <span>
+                            {b.status === 'Cancelled'
+                              ? `หักแต้มคืน AUTO (-${b.pointsEarned} pt)`
+                              : `ได้รับแต้มสะสม AUTO (+${b.pointsEarned} pt)`}
+                          </span>
+                        </span>
+
+                        <span className="text-[11px] font-medium text-slate-600">
+                          มัดจำ: ฿{b.depositAmount.toLocaleString()}
+                        </span>
                       </div>
+
+                      {/* Cancellation details if cancelled */}
+                      {b.status === 'Cancelled' && (
+                        <div className="mt-2 text-xs bg-rose-50 border border-rose-200 text-rose-900 rounded-xl p-2.5 space-y-1">
+                          <p className="font-bold flex items-center space-x-1">
+                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span>ข้อมูลการยกเลิก: {b.cancelReason}</span>
+                          </p>
+                          <p className="text-[11px] text-rose-700">
+                            วันที่ยกเลิก: {b.cancelledAt || 'ล่าสุด'} | หักเงินมัดจำ: ฿{b.depositForfeitedAmount?.toLocaleString() ?? 0} (คืนเงินลูกค้า: ฿{b.depositRefundedAmount?.toLocaleString() ?? b.depositAmount})
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="text-right flex items-center space-x-4">
-                      <div>
-                        <p className="text-xs text-slate-400">ราคารวมทั้งสิ้น</p>
-                        <p className="text-base font-extrabold text-indigo-600">฿{b.grandTotal.toLocaleString()}</p>
+                    <div className="flex flex-col sm:flex-row items-end md:items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200">
+                      <div className="text-left md:text-right">
+                        <p className="text-[10px] text-slate-400">ราคารวมทั้งสิ้น</p>
+                        <p className="text-lg font-extrabold text-indigo-600">฿{b.grandTotal.toLocaleString()}</p>
                       </div>
-                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1 rounded-full">
-                        {b.status}
-                      </span>
+
+                      {b.status !== 'Cancelled' && (
+                        <button
+                          type="button"
+                          onClick={() => setCancellingBooking(b)}
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center space-x-1.5 shadow-xs"
+                        >
+                          <XCircle className="w-4 h-4 text-rose-600" />
+                          <span>ขอยกเลิกการจอง</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -755,6 +892,22 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                       />
                     </div>
                   </div>
+
+                  {/* Anti-Overlapping Conflict Warning Alert */}
+                  {dateConflict.hasConflict && (
+                    <div className="bg-rose-100 border-2 border-rose-400 rounded-xl p-3 text-xs text-rose-900 space-y-1">
+                      <div className="flex items-center space-x-2 font-bold text-rose-800">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>🚫 แจ้งเตือน: ป้องกันการเช่ารถซ้อน!</span>
+                      </div>
+                      <p className="text-[11px] text-rose-800 font-medium pl-6">
+                        {dateConflict.message}
+                      </p>
+                      <p className="text-[10px] text-rose-700 font-bold pl-6">
+                        💡 กรุณาเลือกวันเริ่มต้นเช่าหลังจากวันที่ {dateConflict.conflictingBooking?.endDate} หรือเลือกรถคันอื่น
+                      </p>
+                    </div>
+                  )}
 
                   {/* Pricing Rate Notice */}
                   <div className="text-xs bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center">
@@ -944,29 +1097,82 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                   {/* Payment Details Container */}
                   <div className="bg-white p-3.5 rounded-xl border border-indigo-100 space-y-3">
                     {paymentMethod === 'promptpay' && (
-                      <div className="text-center space-y-2">
-                        <p className="text-[11px] text-slate-600 font-semibold">
-                          สแกน QR Code ด้วยแอปธนาคารใดก็ได้ ชำระยอด ฿{(grandTotal + deposit.effectiveDeposit).toLocaleString()}
+                      <div className="text-center space-y-3">
+                        <p className="text-xs text-slate-600 font-semibold">
+                          สแกน QR Code ด้วยแอปธนาคารใดก็ได้ ชำระยอด <span className="text-indigo-600 font-bold">฿{(grandTotal + deposit.effectiveDeposit).toLocaleString()}</span>
                         </p>
-                        <div className="w-52 bg-white border border-slate-200 rounded-xl p-2 mx-auto flex items-center justify-center relative shadow-xs">
-                          <img
-                            src={
-                              FINANCE_CONFIG.paymentMethods.promptPay.customQrImageUrl ||
-                              `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY-DRIVEERP-${grandTotal + deposit.effectiveDeposit}`
-                            }
-                            alt="PromptPay QR Code"
-                            className="w-full h-auto object-contain rounded-lg"
-                          />
+
+                        {/* Official K+ Thai QR Payment Card */}
+                        <div className="w-80 max-w-full mx-auto bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-md text-center font-sans my-2 relative group">
+                          {/* Top Header Bar (Dark Navy Blue #0C3859) */}
+                          <div className="bg-[#0C3859] text-white px-4 py-3 flex items-center justify-between shadow-xs">
+                            <div className="flex items-center space-x-2.5 mx-auto">
+                              {/* Thai QR Logo Emblem */}
+                              <div className="w-6 h-6 rounded bg-teal-500/20 border border-teal-300/40 flex items-center justify-center p-0.5">
+                                <div className="w-full h-full border-2 border-white rounded-2xs flex items-center justify-center relative">
+                                  <div className="w-1.5 h-1.5 bg-teal-300 rounded-2xs"></div>
+                                </div>
+                              </div>
+                              <span className="font-extrabold text-sm tracking-wider text-white font-sans uppercase">
+                                THAI QR PAYMENT
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* PromptPay Badge */}
+                          <div className="pt-3 pb-1 flex justify-center">
+                            <div className="border border-slate-300 rounded px-3 py-0.5 text-xs font-bold text-[#0C3859] bg-white flex items-center gap-1 shadow-2xs">
+                              <span className="text-[#0C3859] font-extrabold tracking-tight">Prompt</span>
+                              <span className="text-[#129A98] font-extrabold tracking-tight">Pay</span>
+                            </div>
+                          </div>
+
+                          {/* QR Code (Dynamic with fallback to /qr-bank.svg) */}
+                          <div className="p-2 flex justify-center items-center relative">
+                            <div className="bg-white p-2 border border-slate-100 rounded-xl relative shadow-2xs">
+                              <img
+                                src={getPromptPayQrUrl(
+                                  FINANCE_CONFIG.paymentMethods.promptPay.promptPayNumber,
+                                  grandTotal + deposit.effectiveDeposit
+                                )}
+                                alt="THAI QR PAYMENT - นาย เกียรติยศ ชุนเชิด"
+                                className="w-48 h-48 object-contain mx-auto"
+                                onError={(e) => {
+                                  e.currentTarget.src = '/qr-bank.svg';
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Account Details */}
+                          <div className="px-4 pb-3.5 space-y-1">
+                            <p className="text-[#129A98] font-bold text-xs tracking-tight">
+                              สแกน QR เพื่อโอนเข้าบัญชี
+                            </p>
+                            <p className="text-slate-800 font-bold text-sm">
+                              ชื่อ: {FINANCE_CONFIG.paymentMethods.promptPay.accountName}
+                            </p>
+                            <p className="text-slate-600 font-mono text-xs">
+                              บัญชี: {FINANCE_CONFIG.paymentMethods.promptPay.accountNumberMasked || 'xxx-x-x7437-x'}
+                            </p>
+                            <p className="text-slate-400 font-mono text-[10px]">
+                              เลขที่อ้างอิง: {FINANCE_CONFIG.paymentMethods.promptPay.refNo || '004999222186800'}
+                            </p>
+                          </div>
+
+                          {/* Footer (K+ Accepts all banks) */}
+                          <div className="border-t-2 border-[#00A950] px-3 py-2 bg-slate-50/80 flex items-center justify-center space-x-1.5 text-[11px]">
+                            <span className="font-extrabold text-[#00A950] text-base">K+</span>
+                            <span className="text-slate-600 font-medium">Accepts all banks | รับเงินได้จากทุกธนาคาร</span>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-500">
-                          ชื่อบัญชี: <span className="font-bold text-slate-800">{FINANCE_CONFIG.paymentMethods.promptPay.accountName}</span> | พร้อมเพย์: <span className="font-mono font-bold text-indigo-600">{FINANCE_CONFIG.paymentMethods.promptPay.promptPayNumber}</span>
-                        </div>
+
                         <button
                           type="button"
                           onClick={() => setIsPaymentVerified(true)}
-                          className={`w-full py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                          className={`w-full py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center space-x-1.5 ${
                             isPaymentVerified
-                              ? 'bg-emerald-600 text-white'
+                              ? 'bg-emerald-600 text-white shadow-sm'
                               : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
                           }`}
                         >
@@ -1116,10 +1322,19 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-2xl transition cursor-pointer shadow-lg shadow-indigo-600/30 text-xs flex items-center justify-center space-x-2"
+                  disabled={dateConflict.hasConflict}
+                  className={`w-full text-white font-bold py-3.5 rounded-2xl transition cursor-pointer shadow-lg text-xs flex items-center justify-center space-x-2 ${
+                    dateConflict.hasConflict
+                      ? 'bg-slate-400 hover:bg-slate-500 cursor-not-allowed shadow-none'
+                      : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
+                  }`}
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span>ยืนยันการชำระเงิน จองเช่ารถ และออกสัญญา</span>
+                  <span>
+                    {dateConflict.hasConflict
+                      ? '🚫 ไม่สามารถจองได้ (มีคิวเช่าซ้อนช่วงวันที่นี้)'
+                      : 'ยืนยันการชำระเงิน จองเช่ารถ และออกสัญญา'}
+                  </span>
                 </button>
 
               </form>
@@ -1127,6 +1342,36 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
 
           </div>
         </div>
+      )}
+
+      {/* CUSTOMER CANCELLATION MODAL */}
+      {cancellingBooking && (
+        <CancelBookingModal
+          isOpen={!!cancellingBooking}
+          booking={cancellingBooking}
+          customer={customers.find((c) => c.id === cancellingBooking.customerId) || (user ? {
+            id: user.id,
+            fullName: user.name,
+            nationalId: '',
+            driverLicenseNo: '',
+            phone: user.phone || '',
+            email: user.email,
+            tier: 'Silver',
+            pointsBalance: user.points || 0,
+            totalRentalsCount: 0,
+            totalSpentTHB: 0,
+            isBlacklisted: false,
+            creditLimitTHB: 0,
+            registeredDate: '',
+          } : null)}
+          onClose={() => setCancellingBooking(null)}
+          onConfirmCancel={(bookingId, forfeitAmount, reason) => {
+            if (onCancelBooking) {
+              onCancelBooking(bookingId, forfeitAmount, reason);
+            }
+            setCancellingBooking(null);
+          }}
+        />
       )}
 
     </div>

@@ -15,7 +15,7 @@ export const initialVehicles: Vehicle[] = [
     status: 'Available',
     currentOdometer: 14250,
     nextServiceKm: 20000,
-    dailyRate: 1200,
+    dailyRate: 0,
     fuelType: 'Gasohol 91/95',
     fuelLevelPercent: 100,
     documents: {

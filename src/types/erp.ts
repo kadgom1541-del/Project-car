@@ -139,6 +139,11 @@ export interface Booking {
   signatureDataUrl?: string;
   contractSignedAt?: string;
   createdDate: string;
+  
+  cancelReason?: string;
+  cancelledAt?: string;
+  depositForfeitedAmount?: number;
+  depositRefundedAmount?: number;
 }
 
 export interface DamageMark {

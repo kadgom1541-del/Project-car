@@ -10,9 +10,11 @@ import {
   calculateRentalPricing,
   calculateSecurityDeposit
 } from '../../utils/erpEngine';
+import { checkBookingConflict } from '../../utils/bookingConflictChecker';
 import { SignaturePad } from '../common/SignaturePad';
 import { PdfDocumentViewer } from '../pdf/PdfDocumentViewer';
-import { Calendar, Plus, FileText, CheckCircle, AlertTriangle, ShieldCheck, Tag, DollarSign, Printer, Zap } from 'lucide-react';
+import { CancelBookingModal } from './CancelBookingModal';
+import { Calendar, Plus, FileText, CheckCircle, AlertTriangle, ShieldCheck, Tag, DollarSign, Printer, Zap, XCircle } from 'lucide-react';
 
 interface BookingModuleProps {
   bookings: Booking[];
@@ -21,6 +23,7 @@ interface BookingModuleProps {
   coupons: Coupon[];
   onAddBooking: (newBooking: Booking) => void;
   onUpdateBookingStatus: (bookingId: string, status: Booking['status']) => void;
+  onCancelBooking: (bookingId: string, forfeitDepositAmount: number, cancelReason: string) => void;
 }
 
 export const BookingModule: React.FC<BookingModuleProps> = ({
@@ -30,9 +33,11 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
   coupons,
   onAddBooking,
   onUpdateBookingStatus,
+  onCancelBooking,
 }) => {
   const { openPdfModal } = useErpStore();
   const [showNewBookingModal, setShowNewBookingModal] = useState<boolean>(false);
+  const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
   const [activePdfDoc, setActivePdfDoc] = useState<{
     type: 'Contract' | 'Voucher' | 'TaxInvoice' | 'Inspection';
     booking: Booking;
@@ -96,32 +101,54 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
       cell: ({ row }) => {
         const st = row.original.status;
         return (
-          <span
-            className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-              st === 'Active'
-                ? 'bg-emerald-100 text-emerald-800'
-                : st === 'Confirmed'
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            {st}
-          </span>
+          <div className="space-y-1">
+            <span
+              className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-block ${
+                st === 'Active'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : st === 'Confirmed'
+                  ? 'bg-blue-100 text-blue-800'
+                  : st === 'Cancelled'
+                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {st === 'Cancelled' ? 'ยกเลิกการจอง' : st}
+            </span>
+            {st === 'Cancelled' && row.original.depositForfeitedAmount !== undefined && (
+              <p className="text-[10px] text-rose-700 font-semibold">
+                ริบมัดจำ: ฿{row.original.depositForfeitedAmount.toLocaleString()}
+              </p>
+            )}
+          </div>
         );
       },
     },
     {
       id: 'actions',
-      header: 'ออกเอกสาร PDF',
+      header: 'การจัดการ / สัญญา',
       cell: ({ row }) => (
-        <button
-          type="button"
-          onClick={() => openPdfModal(row.original)}
-          className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
-        >
-          <FileText className="w-3.5 h-3.5" />
-          <span>พิมพ์ / PDF</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => openPdfModal(row.original)}
+            className="flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>พิมพ์ / PDF</span>
+          </button>
+
+          {row.original.status !== 'Cancelled' && (
+            <button
+              type="button"
+              onClick={() => setCancellingBooking(row.original)}
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition cursor-pointer"
+            >
+              <XCircle className="w-3.5 h-3.5 text-rose-600" />
+              <span>ยกเลิกจอง</span>
+            </button>
+          )}
+        </div>
       ),
     },
   ];
@@ -231,6 +258,12 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
 
     if (!assignedVehicle) {
       alert('ไม่พบรถว่างในกลุ่มนี้ กรุณาเปลี่ยนกลุ่มรถ');
+      return;
+    }
+
+    const conflict = checkBookingConflict(assignedVehicle.id, startDate, endDate, bookings);
+    if (conflict.hasConflict) {
+      alert(`⚠️ ระบบป้องกันการเช่ารถซ้อน!\n\nรถทะเบียน ${assignedVehicle.plateNumber} ${conflict.message}\n\nกรุณาเลือกระยะเวลาอื่นหรือเลือกรถคันอื่น`);
       return;
     }
 
@@ -529,6 +562,20 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
           customer={customers.find((c) => c.id === activePdfDoc.booking.customerId)}
           vehicle={vehicles.find((v) => v.id === activePdfDoc.booking.vehicleId)}
           onClose={() => setActivePdfDoc(null)}
+        />
+      )}
+
+      {/* Cancel Booking & Deposit Forfeiture Modal */}
+      {cancellingBooking && (
+        <CancelBookingModal
+          isOpen={!!cancellingBooking}
+          booking={cancellingBooking}
+          customer={customers.find((c) => c.id === cancellingBooking.customerId)}
+          onClose={() => setCancellingBooking(null)}
+          onConfirmCancel={(bookingId, forfeitAmount, reason) => {
+            onCancelBooking(bookingId, forfeitAmount, reason);
+            setCancellingBooking(null);
+          }}
         />
       )}
 

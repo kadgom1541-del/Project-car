@@ -86,6 +86,28 @@ export default function App() {
     }
   }, []);
 
+  // Sync currentUser points and tier live with customers array
+  useEffect(() => {
+    if (currentUser) {
+      const matched = customers.find(
+        (c) => c.email === currentUser.email || c.fullName.includes(currentUser.name) || c.id === currentUser.id
+      );
+      if (matched && (matched.pointsBalance !== currentUser.points || matched.tier !== currentUser.tier)) {
+        const updatedUser: UserProfile = {
+          ...currentUser,
+          points: matched.pointsBalance,
+          tier: matched.tier,
+        };
+        setCurrentUser(updatedUser);
+        try {
+          localStorage.setItem('app_user_profile', JSON.stringify(updatedUser));
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  }, [customers, currentUser]);
+
   // Computed Metrics
   const totalVehicles = vehicles.length;
   const availableVehicles = vehicles.filter((v) => v.status === 'Available').length;
@@ -176,21 +198,61 @@ export default function App() {
     // 1. Update vehicle status
     handleUpdateVehicleStatus(newBooking.vehicleId, 'Rented');
 
-    // 2. Add points to customer
-    setCustomers((prev) =>
-      prev.map((c) =>
-        c.id === newBooking.customerId
-          ? {
-              ...c,
-              pointsBalance: c.pointsBalance + newBooking.pointsEarned,
-              totalRentalsCount: c.totalRentalsCount + 1,
-              totalSpentTHB: c.totalSpentTHB + newBooking.grandTotal,
-            }
-          : c
-      )
-    );
+    // 2. Add points to customer (and create customer record if doesn't exist yet)
+    setCustomers((prev) => {
+      const matchIndex = prev.findIndex(
+        (c) =>
+          c.id === newBooking.customerId ||
+          c.fullName.includes(newBooking.customerName) ||
+          (currentUser && (c.email === currentUser.email || c.fullName === currentUser.name))
+      );
 
-    // 3. Create IFRS 15 Journal Entry automatically
+      if (matchIndex >= 0) {
+        return prev.map((c, idx) =>
+          idx === matchIndex
+            ? {
+                ...c,
+                pointsBalance: c.pointsBalance + newBooking.pointsEarned,
+                totalRentalsCount: c.totalRentalsCount + 1,
+                totalSpentTHB: c.totalSpentTHB + newBooking.grandTotal,
+              }
+            : c
+        );
+      } else {
+        const newCust: Customer = {
+          id: newBooking.customerId || `cust-${Date.now()}`,
+          fullName: newBooking.customerName,
+          nationalId: '3-1002-00821-44-1',
+          driverLicenseNo: 'DL-99120033',
+          phone: currentUser?.phone || '081-998-8822',
+          email: currentUser?.email || 'customer@driveerp.com',
+          tier: 'Silver',
+          pointsBalance: newBooking.pointsEarned,
+          totalRentalsCount: 1,
+          totalSpentTHB: newBooking.grandTotal,
+          isBlacklisted: false,
+          creditLimitTHB: 10000,
+          registeredDate: new Date().toISOString().split('T')[0],
+        };
+        return [newCust, ...prev];
+      }
+    });
+
+    // 3. Update active user profile points directly
+    if (currentUser) {
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        points: (currentUser.points || 0) + newBooking.pointsEarned,
+      };
+      setCurrentUser(updatedUser);
+      try {
+        localStorage.setItem('app_user_profile', JSON.stringify(updatedUser));
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 4. Create IFRS 15 Journal Entry automatically
     const newJe: JournalEntry = {
       id: `je-${Date.now()}`,
       date: new Date().toISOString().split('T')[0],
@@ -212,6 +274,90 @@ export default function App() {
     setBookings(
       bookings.map((b) => (b.id === bookingId ? { ...b, status } : b))
     );
+  };
+
+  const handleCancelBooking = (
+    bookingId: string,
+    forfeitDepositAmount: number,
+    cancelReason: string
+  ) => {
+    const targetBooking = bookings.find((b) => b.id === bookingId);
+    if (!targetBooking) return;
+
+    const refundedDepositAmount = Math.max(0, targetBooking.depositAmount - forfeitDepositAmount);
+
+    // 1. Update Booking status to 'Cancelled'
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              status: 'Cancelled',
+              cancelReason,
+              cancelledAt: new Date().toISOString().split('T')[0],
+              depositForfeitedAmount: forfeitDepositAmount,
+              depositRefundedAmount: refundedDepositAmount,
+            }
+          : b
+      )
+    );
+
+    // 2. Release Vehicle back to Available status
+    handleUpdateVehicleStatus(targetBooking.vehicleId, 'Available');
+
+    // 3. AUTO DEDUCT REWARD POINTS & adjust customer stats
+    setCustomers((prev) =>
+      prev.map((c) => {
+        if (
+          c.id === targetBooking.customerId ||
+          c.fullName.includes(targetBooking.customerName) ||
+          (currentUser && (c.email === currentUser.email || c.fullName === currentUser.name))
+        ) {
+          const newPoints = Math.max(0, c.pointsBalance - targetBooking.pointsEarned);
+          const newCount = Math.max(0, c.totalRentalsCount - 1);
+          const newSpent = Math.max(0, c.totalSpentTHB - targetBooking.grandTotal);
+          return {
+            ...c,
+            pointsBalance: newPoints,
+            totalRentalsCount: newCount,
+            totalSpentTHB: newSpent,
+          };
+        }
+        return c;
+      })
+    );
+
+    if (currentUser) {
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        points: Math.max(0, (currentUser.points || 0) - targetBooking.pointsEarned),
+      };
+      setCurrentUser(updatedUser);
+      try {
+        localStorage.setItem('app_user_profile', JSON.stringify(updatedUser));
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 4. Create Accounting Journal Entry for Booking Cancellation & Deposit Forfeiture
+    const cancelJe: JournalEntry = {
+      id: `je-cancel-${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      voucherNo: `JV-CANCEL-${Math.floor(1000 + Math.random() * 9000)}`,
+      description: `ยกเลิกการจอง ${targetBooking.bookingCode} (สาเหตุ: ${cancelReason}) - ริบเงินมัดจำ ฿${forfeitDepositAmount.toLocaleString()} / คืนมัดจำ ฿${refundedDepositAmount.toLocaleString()} / หักแต้มคืน AUTO ${targetBooking.pointsEarned} pt`,
+      debitAccount: '2110 - เงินมัดจำรอดำเนินการ (Deposit Liability)',
+      debitAmount: targetBooking.depositAmount,
+      creditAccount: forfeitDepositAmount > 0 
+        ? '4210 - รายได้จากการริบเงินมัดจำ (Forfeited Deposit Income)' 
+        : '1110 - เงินสด/เงินฝากธนาคาร (Cash & Bank)',
+      creditAmount: targetBooking.depositAmount,
+      bookingRefId: targetBooking.id,
+      vehicleRefId: targetBooking.vehicleId,
+      notes: `หักแต้มสะสม ${targetBooking.pointsEarned} pt คืนจากบัญชีลูกค้า AUTO`,
+    };
+
+    setJournalEntries((prev) => [cancelJe, ...prev]);
   };
 
   const handleAddWorkOrder = (wo: MaintenanceWorkOrder) => {
@@ -351,6 +497,7 @@ export default function App() {
           bookings={bookings}
           coupons={coupons}
           onAddBooking={handleAddBooking}
+          onCancelBooking={handleCancelBooking}
         />
       ) : (
         /* Owner & Staff DriveERP Admin View */
@@ -411,6 +558,7 @@ export default function App() {
                   coupons={coupons}
                   onAddBooking={handleAddBooking}
                   onUpdateBookingStatus={handleUpdateBookingStatus}
+                  onCancelBooking={handleCancelBooking}
                 />
               )}
 
