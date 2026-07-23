@@ -950,7 +950,10 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
                         </p>
                         <div className="w-36 h-36 bg-slate-100 border border-slate-200 rounded-xl p-2 mx-auto flex items-center justify-center relative">
                           <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PROMPTPAY-DRIVEERP-${grandTotal + deposit.effectiveDeposit}`}
+                            src={
+                              FINANCE_CONFIG.paymentMethods.promptPay.customQrImageUrl ||
+                              `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PROMPTPAY-DRIVEERP-${grandTotal + deposit.effectiveDeposit}`
+                            }
                             alt="PromptPay QR Code"
                             className="w-full h-full object-contain"
                           />

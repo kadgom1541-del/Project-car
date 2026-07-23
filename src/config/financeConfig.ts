@@ -66,6 +66,7 @@ export const FINANCE_CONFIG = {
       accountName: 'บจก. ไดรฟ์ อีอาร์พี คาร์เรนทัล',
       promptPayNumber: '081-999-8888',
       qrApiTemplate: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=',
+      customQrImageUrl: '', // วาง URL รูป QR Code ธนาคารของคุณที่นี่ (เช่น 'https://example.com/qr.png' หรือ '/qr-code.png')
     },
     bankTransfer: {
       bankName: 'ธนาคารกสิกรไทย (KBANK)',
