@@ -1,0 +1,6 @@
+{
+  "name": "DriveERP - ระบบ ERP รถเช่า คูปอง & สมาชิก",
+  "description": "ระบบบริหารจัดการองค์กรธุรกิจรถเช่า (Car Rental ERP) ครบวงจร พร้อมระบบคูปองโปรโมชัน ระบบสะสมแต้มสมาชิก (Loyalty Points) การตรวจรับรถแบบดิจิทัล และการบัญชีตามมาตรฐานสากล",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
