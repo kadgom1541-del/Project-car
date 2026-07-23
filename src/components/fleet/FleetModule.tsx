@@ -1,19 +1,57 @@
 import React, { useState } from 'react';
 import { Vehicle, VehicleStatus, VehicleCategory } from '../../types/erp';
-import { Car, Plus, AlertCircle, Wrench, ShieldAlert, MapPin, Gauge, Fuel, Calendar, Search, Filter, Eye, LayoutGrid, Table } from 'lucide-react';
+import {
+  Car,
+  Plus,
+  AlertCircle,
+  Wrench,
+  ShieldAlert,
+  MapPin,
+  Gauge,
+  Fuel,
+  Calendar,
+  Search,
+  Filter,
+  Eye,
+  LayoutGrid,
+  Table,
+  CheckCircle2,
+  Save,
+  X,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Camera,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+} from 'lucide-react';
 import { ColumnDef } from '@tanstack/react-table';
 import { TanStackDataTable } from '../common/TanStackDataTable';
+
+// Sample vehicle photos preset for quick testing helper
+const SAMPLE_CAR_PRESETS = [
+  'https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1583121274602-3e2820c69888?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=800&q=80',
+];
 
 interface FleetModuleProps {
   vehicles: Vehicle[];
   onAddVehicle: (newVehicle: Vehicle) => void;
   onUpdateVehicleStatus: (vehicleId: string, newStatus: VehicleStatus) => void;
+  onUpdateVehicleOdometer?: (vehicleId: string, newOdometer: number) => void;
 }
 
 export const FleetModule: React.FC<FleetModuleProps> = ({
   vehicles,
   onAddVehicle,
   onUpdateVehicleStatus,
+  onUpdateVehicleOdometer,
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -22,24 +60,202 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
 
+  // Photo upload state for new vehicle modal
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  // Active photo gallery index for vehicle detail modal
+  const [activeDetailPhotoIndex, setActiveDetailPhotoIndex] = useState<number>(0);
+
+  // Odometer editing states
+  const [isEditingOdometer, setIsEditingOdometer] = useState<boolean>(false);
+  const [editOdometerInput, setEditOdometerInput] = useState<string>('');
+  const [odometerSavedSuccess, setOdometerSavedSuccess] = useState<boolean>(false);
+
+  const handleStartEditOdometer = () => {
+    if (!selectedVehicleForDetail) return;
+    setEditOdometerInput(selectedVehicleForDetail.currentOdometer.toString());
+    setIsEditingOdometer(true);
+    setOdometerSavedSuccess(false);
+  };
+
+  const handleSaveOdometer = () => {
+    if (!selectedVehicleForDetail) return;
+    const newVal = Number(editOdometerInput);
+    if (isNaN(newVal) || newVal < 0) {
+      alert('กรุณากรอกตัวเลขไมล์ที่ถูกต้อง (ต้องเป็นตัวเลขมากกว่าหรือเท่ากับ 0)');
+      return;
+    }
+
+    const updated = { ...selectedVehicleForDetail, currentOdometer: newVal };
+    setSelectedVehicleForDetail(updated);
+
+    if (onUpdateVehicleOdometer) {
+      onUpdateVehicleOdometer(selectedVehicleForDetail.id, newVal);
+    } else {
+      selectedVehicleForDetail.currentOdometer = newVal;
+    }
+
+    setIsEditingOdometer(false);
+    setOdometerSavedSuccess(true);
+    setTimeout(() => setOdometerSavedSuccess(false), 4000);
+  };
+
+  // Handlers for image upload in Add Vehicle Modal
+  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList: File[] = Array.from(files);
+    const remainingSlots = 6 - uploadedImages.length;
+    if (remainingSlots <= 0) {
+      alert('คุณอัปโหลดรูปภาพครบจำนวนสูงสุด (6 รูป) แล้ว');
+      return;
+    }
+
+    const filesToProcess = fileList.slice(0, remainingSlots);
+
+    filesToProcess.forEach((file: File) => {
+      if (!file.type.startsWith('image/')) {
+        alert(`ไฟล์ ${file.name} ไม่ใช่ไฟล์รูปภาพ (รองรับ PNG, JPG, JPEG, WEBP, GIF)`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setUploadedImages((prev) => {
+            if (prev.length >= 6) return prev;
+            return [...prev, event.target!.result as string];
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    e.target.value = '';
+  };
+
+  const handleDropImages = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const fileList: File[] = Array.from(files);
+    const remainingSlots = 6 - uploadedImages.length;
+    if (remainingSlots <= 0) {
+      alert('คุณอัปโหลดรูปภาพครบจำนวนสูงสุด (6 รูป) แล้ว');
+      return;
+    }
+
+    const filesToProcess = fileList.slice(0, remainingSlots);
+
+    filesToProcess.forEach((file: File) => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setUploadedImages((prev) => {
+            if (prev.length >= 6) return prev;
+            return [...prev, event.target!.result as string];
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemoveUploadedImage = (indexToRemove: number) => {
+    setUploadedImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleUseSampleImages = () => {
+    setUploadedImages(SAMPLE_CAR_PRESETS.slice(0, 5));
+  };
+
+  // Handler for uploading image directly to vehicle in Detail Modal
+  const handleDetailImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedVehicleForDetail) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList: File[] = Array.from(files);
+    fileList.forEach((file: File) => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const newImgUrl = event.target.result as string;
+          setSelectedVehicleForDetail((prev) => {
+            if (!prev) return null;
+            const currentImgs = prev.images && prev.images.length > 0 ? prev.images : [prev.imageUrl];
+            const updatedImgs = [...currentImgs, newImgUrl];
+            return {
+              ...prev,
+              imageUrl: prev.imageUrl || newImgUrl,
+              images: updatedImgs,
+            };
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    e.target.value = '';
+  };
+
+  const handleDeleteDetailImage = (indexToDelete: number) => {
+    if (!selectedVehicleForDetail) return;
+    const currentImgs = selectedVehicleForDetail.images && selectedVehicleForDetail.images.length > 0
+      ? selectedVehicleForDetail.images
+      : [selectedVehicleForDetail.imageUrl];
+
+    if (currentImgs.length <= 1) {
+      alert('ต้องมีอย่างน้อย 1 รูปภาพในคลังรถยนต์');
+      return;
+    }
+
+    const updatedImgs = currentImgs.filter((_, idx) => idx !== indexToDelete);
+    setSelectedVehicleForDetail({
+      ...selectedVehicleForDetail,
+      imageUrl: updatedImgs[0],
+      images: updatedImgs,
+    });
+    if (activeDetailPhotoIndex >= updatedImgs.length) {
+      setActiveDetailPhotoIndex(Math.max(0, updatedImgs.length - 1));
+    }
+  };
+
   // TanStack Table Column Definitions
   const fleetColumns: ColumnDef<Vehicle>[] = [
     {
       accessorKey: 'model',
       header: 'รุ่นรถยนต์ / ยี่ห้อ',
-      cell: ({ row }) => (
-        <div className="flex items-center space-x-3">
-          <img
-            src={row.original.imageUrl}
-            alt={row.original.model}
-            className="w-12 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
-          />
-          <div>
-            <p className="font-extrabold text-slate-900 text-xs">{row.original.brand} {row.original.model}</p>
-            <p className="text-[10px] text-slate-400">ปี {row.original.year} • {row.original.fuelType}</p>
+      cell: ({ row }) => {
+        const v = row.original;
+        const photoCount = v.images?.length || (v.imageUrl ? 1 : 0);
+        return (
+          <div className="flex items-center space-x-3">
+            <div className="relative shrink-0">
+              <img
+                src={v.imageUrl}
+                alt={v.model}
+                className="w-12 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
+              />
+              {photoCount > 1 && (
+                <span className="absolute -bottom-1 -right-1 bg-slate-900 text-white font-mono text-[9px] px-1 py-0.2 rounded-full border border-white flex items-center space-x-0.5">
+                  <ImageIcon className="w-2.5 h-2.5" />
+                  <span>{photoCount}</span>
+                </span>
+              )}
+            </div>
+            <div>
+              <p className="font-extrabold text-slate-900 text-xs">{v.brand} {v.model}</p>
+              <p className="text-[10px] text-slate-400">ปี {v.year} • {v.fuelType}</p>
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       accessorKey: 'plateNumber',
@@ -117,10 +333,6 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
   const [newColor, setNewColor] = useState('White Pearl');
   const [newFuelType, setNewFuelType] = useState<'Gasoline 95' | 'Gasohol 91/95' | 'Diesel' | 'Electric (EV)'>('Gasohol 91/95');
 
-  // Edit vehicle state inside modal
-  const [editOdometerVal, setEditOdometerVal] = useState<number>(0);
-  const [isEditingOdometer, setIsEditingOdometer] = useState<boolean>(false);
-
   // Filter vehicles
   const filteredVehicles = vehicles.filter((v) => {
     const matchesStatus = selectedStatus === 'All' || v.status === selectedStatus;
@@ -148,6 +360,9 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
 
   const handleCreateVehicle = (e: React.FormEvent) => {
     e.preventDefault();
+    const defaultImg = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80';
+    const finalImages = uploadedImages.length > 0 ? uploadedImages : [defaultImg];
+
     const created: Vehicle = {
       id: `veh-${Date.now().toString().slice(-4)}`,
       plateNumber: newPlate,
@@ -178,7 +393,8 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
         locationName: 'สาขาสุวรรณภูมิ HQ',
         lastUpdated: 'เพิ่งอัปเดต',
       },
-      imageUrl: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80',
+      imageUrl: finalImages[0],
+      images: finalImages,
       purchasePrice: 989000,
       salvageValue: 200000,
       usefulLifeYears: 5,
@@ -186,6 +402,7 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
     };
     onAddVehicle(created);
     setShowAddModal(false);
+    setUploadedImages([]);
   };
 
   return (
@@ -346,6 +563,7 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
           {filteredVehicles.map((v) => {
           const statusStyle = statusColors[v.status];
           const isServiceSoon = v.currentOdometer >= v.nextServiceKm - 1000;
+          const photoCount = v.images?.length || (v.imageUrl ? 1 : 0);
 
           return (
             <div
@@ -371,6 +589,14 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
                 <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-slate-900 font-extrabold text-xs shadow">
                   {v.dailyRate.toLocaleString()} <span className="text-[10px] font-normal text-slate-500">บาท/วัน</span>
                 </div>
+
+                {/* Photo Count Badge */}
+                {photoCount > 0 && (
+                  <div className="absolute bottom-3 right-3 bg-slate-900/80 text-white backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center space-x-1">
+                    <ImageIcon className="w-3 h-3 text-indigo-300" />
+                    <span>{photoCount} รูป</span>
+                  </div>
+                )}
 
                 {isServiceSoon && (
                   <div className="absolute bottom-2 left-2 right-2 bg-amber-500/90 text-white backdrop-blur-sm px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center space-x-1">
@@ -435,7 +661,7 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
                     className="flex items-center space-x-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>รายละเอียด GPS/บัญชี</span>
+                    <span>รายละเอียด GPS/รูปภาพ</span>
                   </button>
 
                 </div>
@@ -484,29 +710,169 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
               </div>
             </div>
 
-            {/* Current Odometer Update Panel */}
-            <div className="bg-indigo-50/80 border border-indigo-200 p-3.5 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="text-indigo-900 font-bold block text-[11px]">⚡ เลขไมล์สะสมปัจจุบัน (Current Odometer):</span>
-                <span className="font-mono text-xl font-black text-indigo-900">
-                  {selectedVehicleForDetail.currentOdometer.toLocaleString()} <span className="text-xs font-semibold text-slate-600">กม.</span>
-                </span>
+            {/* Interactive Photo Gallery Viewer Section */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Camera className="w-4 h-4 text-indigo-600" />
+                  <h4 className="font-bold text-slate-900 text-xs">
+                    คลังรูปภาพยานพาหนะ ({selectedVehicleForDetail.images?.length || (selectedVehicleForDetail.imageUrl ? 1 : 0)} รูป)
+                  </h4>
+                </div>
+                <label className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition flex items-center space-x-1">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>เพิ่มรูป PNG/JPG</span>
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    multiple
+                    onChange={handleDetailImageUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const newOdoStr = prompt('กรอกเลขไมล์ปัจจุบันใหม่ (กม.):', selectedVehicleForDetail.currentOdometer.toString());
-                  if (newOdoStr && !isNaN(Number(newOdoStr))) {
-                    const newVal = Number(newOdoStr);
-                    selectedVehicleForDetail.currentOdometer = newVal;
-                    alert(`อัปเดตเลขไมล์เป็น ${newVal.toLocaleString()} กม. เรียบร้อยแล้ว`);
-                  }
-                }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center space-x-1.5 shadow-sm"
-              >
-                <Gauge className="w-4 h-4" />
-                <span>แก้ไขเลขไมล์</span>
-              </button>
+
+              {/* Main Featured Photo Preview */}
+              {(() => {
+                const images = selectedVehicleForDetail.images && selectedVehicleForDetail.images.length > 0
+                  ? selectedVehicleForDetail.images
+                  : [selectedVehicleForDetail.imageUrl];
+                const safeIndex = Math.min(activeDetailPhotoIndex, images.length - 1);
+                const activePhoto = images[safeIndex] || selectedVehicleForDetail.imageUrl;
+
+                return (
+                  <div className="space-y-2">
+                    <div className="relative h-64 bg-slate-900 rounded-xl overflow-hidden shadow-inner group">
+                      <img
+                        src={activePhoto}
+                        alt={`${selectedVehicleForDetail.model} - Photo ${safeIndex + 1}`}
+                        className="w-full h-full object-cover transition duration-300"
+                      />
+
+                      <div className="absolute top-3 left-3 bg-slate-900/80 text-white text-[11px] font-mono px-2.5 py-1 rounded-md backdrop-blur-sm">
+                        รูปที่ {safeIndex + 1} จาก {images.length}
+                      </div>
+
+                      {images.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setActiveDetailPhotoIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1))}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 bg-slate-900/70 hover:bg-slate-900 text-white p-1.5 rounded-full backdrop-blur-sm transition cursor-pointer"
+                          >
+                            <ChevronLeft className="w-5 h-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveDetailPhotoIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0))}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-900/70 hover:bg-slate-900 text-white p-1.5 rounded-full backdrop-blur-sm transition cursor-pointer"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        </>
+                      )}
+
+                      {images.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDetailImage(safeIndex)}
+                          className="absolute bottom-3 right-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg flex items-center space-x-1 opacity-90 hover:opacity-100 shadow transition cursor-pointer"
+                          title="ลบรูปภาพนี้"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>ลบรูปนี้</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Thumbnail Bar */}
+                    {images.length > 1 && (
+                      <div className="flex items-center space-x-2 overflow-x-auto pb-1 pt-1">
+                        {images.map((img, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setActiveDetailPhotoIndex(idx)}
+                            className={`relative w-20 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition cursor-pointer ${
+                              idx === safeIndex ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-200 opacity-70 hover:opacity-100'
+                            }`}
+                          >
+                            <img src={img} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Current Odometer Update Panel */}
+            <div className="bg-indigo-50/80 border border-indigo-200 p-3.5 rounded-xl space-y-2 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1">
+                  <span className="text-indigo-900 font-bold block text-[11px]">⚡ เลขไมล์สะสมปัจจุบัน (Current Odometer):</span>
+                  
+                  {!isEditingOdometer ? (
+                    <div className="flex items-baseline space-x-2 mt-0.5">
+                      <span className="font-mono text-xl font-black text-indigo-950">
+                        {selectedVehicleForDetail.currentOdometer.toLocaleString()}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-600">กม.</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 mt-1">
+                      <input
+                        type="number"
+                        value={editOdometerInput}
+                        onChange={(e) => setEditOdometerInput(e.target.value)}
+                        className="font-mono text-base font-bold text-indigo-950 bg-white border-2 border-indigo-500 rounded-xl px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-40 shadow-inner"
+                        placeholder="กรอกเลขไมล์..."
+                        autoFocus
+                      />
+                      <span className="text-xs font-bold text-indigo-800">กม.</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0">
+                  {!isEditingOdometer ? (
+                    <button
+                      type="button"
+                      onClick={handleStartEditOdometer}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center space-x-1.5 shadow-sm active:scale-95"
+                    >
+                      <Gauge className="w-4 h-4" />
+                      <span>แก้ไขเลขไมล์</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleSaveOdometer}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center space-x-1 shadow-sm active:scale-95"
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-0.5" />
+                        <span>บันทึก</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingOdometer(false)}
+                        className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-2 rounded-xl transition cursor-pointer active:scale-95"
+                      >
+                        ยกเลิก
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {odometerSavedSuccess && (
+                <div className="bg-emerald-100 border border-emerald-300 text-emerald-900 px-3 py-1.5 rounded-lg font-bold text-xs flex items-center space-x-1.5 animate-fadeIn mt-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>อัปเดตเลขไมล์สะสมเรียบร้อยแล้ว</span>
+                </div>
+              )}
             </div>
 
             {/* Telematics / GPS Location Live Preview */}
@@ -566,10 +932,93 @@ export const FleetModule: React.FC<FleetModuleProps> = ({
       {/* Add New Vehicle Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4 backdrop-blur-sm">
-          <form onSubmit={handleCreateVehicle} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+          <form onSubmit={handleCreateVehicle} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-lg text-slate-900 border-b border-slate-200 pb-3">
               เพิ่มยานพาหนะใหม่เข้าฟลีต (New Asset Registration)
             </h3>
+
+            {/* Photo Upload Dropzone */}
+            <div className="space-y-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <label className="block text-slate-800 text-xs font-bold flex items-center space-x-1.5">
+                  <Camera className="w-4 h-4 text-indigo-600" />
+                  <span>อัปโหลดรูปภาพรถยนต์ (PNG, JPG, WEBP สูงสุด 5-6 รูป) *</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleUseSampleImages}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center space-x-1 cursor-pointer bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span>ใช้ภาพตัวอย่าง 5 มุม</span>
+                </button>
+              </div>
+
+              {/* Drag & Drop File Upload Area */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDropImages}
+                className={`border-2 border-dashed rounded-xl p-3.5 text-center transition ${
+                  isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="file"
+                  id="vehicle-photo-upload"
+                  accept="image/png, image/jpeg, image/jpg, image/webp, image/gif"
+                  multiple
+                  onChange={handleImageFileUpload}
+                  className="hidden"
+                />
+                <label htmlFor="vehicle-photo-upload" className="cursor-pointer block space-y-1">
+                  <div className="mx-auto w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <Upload className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-800">
+                    ลากรูปภาพมาวางที่นี่ หรือ <span className="text-indigo-600 underline">คลิกเลือกไฟล์</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    รองรับไฟล์ .PNG, .JPG, .JPEG, .WEBP (เพิ่มได้ 1 ถึง 6 รูป)
+                  </p>
+                </label>
+              </div>
+
+              {/* Image Preview Thumbnails Grid */}
+              {uploadedImages.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                    <span>รูปภาพที่พร้อมบันทึก ({uploadedImages.length}/6 รูป):</span>
+                    <button
+                      type="button"
+                      onClick={() => setUploadedImages([])}
+                      className="text-red-500 hover:text-red-700 text-[11px] cursor-pointer"
+                    >
+                      ลบรูปทั้งหมด
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {uploadedImages.map((img, idx) => (
+                      <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-300 aspect-4/3 bg-slate-900">
+                        <img src={img} alt={`รูปที่ ${idx + 1}`} className="w-full h-full object-cover" />
+                        <div className="absolute top-0.5 left-0.5 bg-slate-900/80 text-white font-mono text-[8px] px-1 rounded">
+                          #{idx + 1}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveUploadedImage(idx)}
+                          className="absolute top-0.5 right-0.5 bg-red-600 hover:bg-red-700 text-white rounded-full p-0.5 opacity-90 group-hover:opacity-100 transition shadow cursor-pointer"
+                          title="ลบรูปนี้"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>

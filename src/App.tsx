@@ -26,8 +26,10 @@ import { DEMO_USERS, INITIAL_STAFF_MEMBERS, getCurrentAuthUser, signOutUser } fr
 import { isSupabaseConfigured } from './lib/supabase';
 import { fetchAllData } from './lib/supabaseService';
 import { StaffManagementModal } from './components/staff/StaffManagementModal';
+import { QrSettingsModal } from './components/settings/QrSettingsModal';
 import { DocumentPdfModal } from './components/pdf/DocumentPdfModal';
 import { useErpStore } from './store/useErpStore';
+import { FINANCE_CONFIG } from './config/financeConfig';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<string>('dashboard');
@@ -43,6 +45,7 @@ export default function App() {
   // Staff Members Management State
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(INITIAL_STAFF_MEMBERS);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState<boolean>(false);
+  const [isQrSettingsModalOpen, setIsQrSettingsModalOpen] = useState<boolean>(false);
 
   // PDF Engine Zustand state
   const { pdfDocumentBooking, pdfModalOpen, closePdfModal } = useErpStore();
@@ -177,6 +180,12 @@ export default function App() {
     );
   };
 
+  const handleUpdateVehicleOdometer = (vehicleId: string, newOdometer: number) => {
+    setVehicles((prev) =>
+      prev.map((v) => (v.id === vehicleId ? { ...v, currentOdometer: newOdometer } : v))
+    );
+  };
+
   const handleUpdateVehicleOdometerAndFuel = (vehicleId: string, odo: number, fuel: number) => {
     setVehicles(
       vehicles.map((v) =>
@@ -274,6 +283,137 @@ export default function App() {
     setBookings(
       bookings.map((b) => (b.id === bookingId ? { ...b, status } : b))
     );
+  };
+
+  const handleCustomerRequestCancellation = (
+    bookingId: string,
+    reason: string,
+    bankName: string,
+    bankAccountName: string,
+    bankAccountNumber: string
+  ) => {
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              status: 'Cancellation Pending',
+              cancelReason: reason,
+              cancellationRequestedAt: new Date().toISOString(),
+              bankName,
+              bankAccountName,
+              bankAccountNumber,
+            }
+          : b
+      )
+    );
+  };
+
+  const handleApproveCancellation = (
+    bookingId: string,
+    forfeitDepositAmount: number,
+    refundDepositAmount: number,
+    cancelReason: string,
+    adminNote?: string
+  ) => {
+    const targetBooking = bookings.find((b) => b.id === bookingId);
+    if (!targetBooking) return;
+
+    // 1. Update Booking status to 'Cancelled (Refund Pending)'
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              status: 'Cancelled (Refund Pending)',
+              cancelReason,
+              cancellationApprovedAt: new Date().toISOString(),
+              depositForfeitedAmount: forfeitDepositAmount,
+              depositRefundedAmount: refundDepositAmount,
+              adminCancellationNote: adminNote,
+            }
+          : b
+      )
+    );
+
+    // 2. Release Vehicle back to Available status
+    handleUpdateVehicleStatus(targetBooking.vehicleId, 'Available');
+
+    // 3. AUTO DEDUCT REWARD POINTS & adjust customer stats
+    setCustomers((prev) =>
+      prev.map((c) => {
+        if (
+          c.id === targetBooking.customerId ||
+          c.fullName.includes(targetBooking.customerName) ||
+          (currentUser && (c.email === currentUser.email || c.fullName === currentUser.name))
+        ) {
+          const newPoints = Math.max(0, c.pointsBalance - targetBooking.pointsEarned);
+          const newCount = Math.max(0, c.totalRentalsCount - 1);
+          const newSpent = Math.max(0, c.totalSpentTHB - targetBooking.grandTotal);
+          return {
+            ...c,
+            pointsBalance: newPoints,
+            totalRentalsCount: newCount,
+            totalSpentTHB: newSpent,
+          };
+        }
+        return c;
+      })
+    );
+
+    if (currentUser) {
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        points: Math.max(0, (currentUser.points || 0) - targetBooking.pointsEarned),
+      };
+      setCurrentUser(updatedUser);
+      try {
+        localStorage.setItem('app_user_profile', JSON.stringify(updatedUser));
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+
+  const handleCompleteRefund = (
+    bookingId: string,
+    refundSlipUrl: string,
+    adminNote?: string
+  ) => {
+    const targetBooking = bookings.find((b) => b.id === bookingId);
+    if (!targetBooking) return;
+
+    // 1. Update Booking status to 'Cancelled (Refund Completed)'
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              status: 'Cancelled (Refund Completed)',
+              refundCompletedAt: new Date().toISOString(),
+              refundSlipUrl,
+              adminCancellationNote: adminNote || b.adminCancellationNote,
+            }
+          : b
+      )
+    );
+
+    // 2. Add Journal Entry for deposit refund
+    const refundJe: JournalEntry = {
+      id: `je-rf-${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      voucherNo: `JV-RF2026-${Math.floor(100 + Math.random() * 900)}`,
+      description: `โอนคืนเงินมัดจำประกันความเสียหาย (Deposit Refund) - สัญญา ${targetBooking.bookingCode}`,
+      debitAccount: '2110 - เงินมัดจำรับล่วงหน้า (Customer Security Deposit)',
+      debitAmount: targetBooking.depositRefundedAmount ?? targetBooking.depositAmount,
+      creditAccount: '1110 - เงินสด/เงินฝากธนาคาร (Cash & Bank)',
+      creditAmount: targetBooking.depositRefundedAmount ?? targetBooking.depositAmount,
+      bookingRefId: targetBooking.id,
+      vehicleRefId: targetBooking.vehicleId,
+      notes: `แนบสลิปโอนเงินคืนเรียบร้อยแล้ว`,
+    };
+
+    setJournalEntries((prev) => [refundJe, ...prev]);
   };
 
   const handleCancelBooking = (
@@ -506,6 +646,13 @@ export default function App() {
         onDeleteStaff={handleDeleteStaff}
       />
 
+      {/* QR Code Payment Settings Modal (Owner Only) */}
+      <QrSettingsModal
+        isOpen={isQrSettingsModalOpen}
+        onClose={() => setIsQrSettingsModalOpen(false)}
+        user={currentUser}
+      />
+
       {/* Document PDF Renderer Modal */}
       <DocumentPdfModal
         isOpen={pdfModalOpen}
@@ -535,6 +682,7 @@ export default function App() {
           coupons={coupons}
           onAddBooking={handleAddBooking}
           onCancelBooking={handleCancelBooking}
+          onCustomerRequestCancellation={handleCustomerRequestCancellation}
           onRedeemReward={handleRedeemReward}
         />
       ) : (
@@ -564,6 +712,7 @@ export default function App() {
               onOpenLogin={() => handleOpenLogin('owner')}
               onLogout={handleLogout}
               onOpenStaffModal={() => setIsStaffModalOpen(true)}
+              onOpenQrSettingsModal={() => setIsQrSettingsModalOpen(true)}
             />
 
             {/* Main Workspace Area */}
@@ -585,6 +734,7 @@ export default function App() {
                   vehicles={vehicles}
                   onAddVehicle={handleAddVehicle}
                   onUpdateVehicleStatus={handleUpdateVehicleStatus}
+                  onUpdateVehicleOdometer={handleUpdateVehicleOdometer}
                 />
               )}
 
@@ -596,7 +746,8 @@ export default function App() {
                   coupons={coupons}
                   onAddBooking={handleAddBooking}
                   onUpdateBookingStatus={handleUpdateBookingStatus}
-                  onCancelBooking={handleCancelBooking}
+                  onApproveCancellation={handleApproveCancellation}
+                  onCompleteRefund={handleCompleteRefund}
                 />
               )}
 

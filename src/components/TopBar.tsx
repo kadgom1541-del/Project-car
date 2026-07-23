@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Plus, Store, LogOut, User, ShieldCheck } from 'lucide-react';
+import { Menu, Plus, Store, LogOut, User, ShieldCheck, QrCode } from 'lucide-react';
 import { UserProfile } from '../types/auth';
 
 interface TopBarProps {
@@ -20,6 +20,7 @@ interface TopBarProps {
   onOpenLogin: () => void;
   onLogout: () => void;
   onOpenStaffModal?: () => void;
+  onOpenQrSettingsModal?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -32,6 +33,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenLogin,
   onLogout,
   onOpenStaffModal,
+  onOpenQrSettingsModal,
 }) => {
   const moduleTitles: Record<string, { title: string; subtitle: string }> = {
     dashboard: { title: 'ภาพรวมระบบบริหารงาน (Executive Dashboard)', subtitle: 'ภาพรวมคลังรถ ยอดเช่า รายได้ และสถานะบัญชี IFRS 15' },
@@ -72,16 +74,31 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Right: Quick Metrics, Storefront Switch & User Profile */}
       <div className="flex items-center space-x-3 shrink-0">
         
-        {/* Owner Staff Management Button */}
-        {user?.role === 'owner' && onOpenStaffModal && (
-          <button
-            onClick={onOpenStaffModal}
-            className="hidden md:flex items-center space-x-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-2 rounded-xl transition border border-emerald-200 cursor-pointer shadow-2xs"
-            title="จัดการรายชื่อพนักงานและรหัส PIN 6 หลัก"
-          >
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>พนักงาน & PIN 6 หลัก</span>
-          </button>
+        {/* Owner Staff Management & QR Payment Settings Buttons */}
+        {user?.role === 'owner' && (
+          <div className="hidden md:flex items-center space-x-2">
+            {onOpenQrSettingsModal && (
+              <button
+                onClick={onOpenQrSettingsModal}
+                className="flex items-center space-x-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-bold px-3 py-2 rounded-xl transition border border-indigo-200 cursor-pointer shadow-2xs"
+                title="ตั้งค่ารูปภาพ QR Code สแกนจ่ายเงิน และบัญชีพร้อมเพย์ (เฉพาะ Owner)"
+              >
+                <QrCode className="w-4 h-4 text-indigo-600" />
+                <span>ตั้งค่า QR สแกนจ่าย</span>
+              </button>
+            )}
+
+            {onOpenStaffModal && (
+              <button
+                onClick={onOpenStaffModal}
+                className="flex items-center space-x-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-2 rounded-xl transition border border-emerald-200 cursor-pointer shadow-2xs"
+                title="จัดการรายชื่อพนักงานและรหัส PIN 6 หลัก"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>พนักงาน & PIN 6 หลัก</span>
+              </button>
+            )}
+          </div>
         )}
 
         {/* Switch to Storefront Button */}

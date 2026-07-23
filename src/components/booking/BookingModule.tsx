@@ -14,7 +14,26 @@ import { checkBookingConflict } from '../../utils/bookingConflictChecker';
 import { SignaturePad } from '../common/SignaturePad';
 import { PdfDocumentViewer } from '../pdf/PdfDocumentViewer';
 import { CancelBookingModal } from './CancelBookingModal';
-import { Calendar, Plus, FileText, CheckCircle, AlertTriangle, ShieldCheck, Tag, DollarSign, Printer, Zap, XCircle } from 'lucide-react';
+import { RefundSlipModal } from '../common/RefundSlipModal';
+import {
+  Calendar,
+  Plus,
+  FileText,
+  CheckCircle,
+  AlertTriangle,
+  ShieldCheck,
+  Tag,
+  DollarSign,
+  Printer,
+  Zap,
+  XCircle,
+  Hourglass,
+  Receipt,
+  Search,
+  CheckCircle2,
+  Filter,
+  FileCheck
+} from 'lucide-react';
 
 interface BookingModuleProps {
   bookings: Booking[];
@@ -23,7 +42,18 @@ interface BookingModuleProps {
   coupons: Coupon[];
   onAddBooking: (newBooking: Booking) => void;
   onUpdateBookingStatus: (bookingId: string, status: Booking['status']) => void;
-  onCancelBooking: (bookingId: string, forfeitDepositAmount: number, cancelReason: string) => void;
+  onApproveCancellation: (
+    bookingId: string,
+    forfeitDepositAmount: number,
+    refundDepositAmount: number,
+    cancelReason: string,
+    adminNote?: string
+  ) => void;
+  onCompleteRefund: (
+    bookingId: string,
+    refundSlipUrl: string,
+    adminNote?: string
+  ) => void;
 }
 
 export const BookingModule: React.FC<BookingModuleProps> = ({
@@ -33,15 +63,32 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
   coupons,
   onAddBooking,
   onUpdateBookingStatus,
-  onCancelBooking,
+  onApproveCancellation,
+  onCompleteRefund,
 }) => {
   const { openPdfModal } = useErpStore();
   const [showNewBookingModal, setShowNewBookingModal] = useState<boolean>(false);
   const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
+  const [viewingSlipBooking, setViewingSlipBooking] = useState<Booking | null>(null);
   const [activePdfDoc, setActivePdfDoc] = useState<{
     type: 'Contract' | 'Voucher' | 'TaxInvoice' | 'Inspection';
     booking: Booking;
   } | null>(null);
+
+  // Filter Tab State
+  const [filterTab, setFilterTab] = useState<string>('All');
+
+  const pendingCancelCount = bookings.filter((b) => b.status === 'Cancellation Pending').length;
+  const refundPendingCount = bookings.filter((b) => b.status === 'Cancelled (Refund Pending)').length;
+
+  const filteredBookings = bookings.filter((b) => {
+    if (filterTab === 'All') return true;
+    if (filterTab === 'Cancellation Pending') return b.status === 'Cancellation Pending';
+    if (filterTab === 'Refund Pending') return b.status === 'Cancelled (Refund Pending)';
+    if (filterTab === 'Refund Completed') return b.status === 'Cancelled (Refund Completed)';
+    if (filterTab === 'Active') return b.status === 'Active' || b.status === 'Confirmed';
+    return true;
+  });
 
   // TanStack Table Columns for Bookings
   const bookingColumns: ColumnDef<Booking>[] = [
@@ -102,20 +149,57 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
         const st = row.original.status;
         return (
           <div className="space-y-1">
-            <span
-              className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-block ${
-                st === 'Active'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : st === 'Confirmed'
-                  ? 'bg-blue-100 text-blue-800'
-                  : st === 'Cancelled'
-                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                  : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {st === 'Cancelled' ? 'ยกเลิกการจอง' : st}
-            </span>
-            {st === 'Cancelled' && row.original.depositForfeitedAmount !== undefined && (
+            {st === 'Cancellation Pending' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold inline-flex items-center space-x-1 bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                <Hourglass className="w-3 h-3 text-amber-600 shrink-0" />
+                <span>⏳ รอตรวจสอบการยกเลิก</span>
+              </span>
+            )}
+
+            {st === 'Cancelled (Refund Pending)' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold inline-flex items-center space-x-1 bg-sky-100 text-sky-900 border border-sky-300">
+                <DollarSign className="w-3 h-3 text-sky-600 shrink-0" />
+                <span>🔵 อนุมัติแล้ว - รอโอนคืนมัดจำ</span>
+              </span>
+            )}
+
+            {st === 'Cancelled (Refund Completed)' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold inline-flex items-center space-x-1 bg-emerald-100 text-emerald-900 border border-emerald-300">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                <span>🟢 คืนเงินมัดจำเรียบร้อยแล้ว</span>
+              </span>
+            )}
+
+            {st === 'Active' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold inline-block bg-emerald-100 text-emerald-800">
+                Active (กำลังเช่า)
+              </span>
+            )}
+
+            {st === 'Confirmed' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold inline-block bg-blue-100 text-blue-800">
+                Confirmed (ยืนยันแล้ว)
+              </span>
+            )}
+
+            {st === 'Cancelled' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold inline-block bg-rose-100 text-rose-800 border border-rose-300">
+                Cancelled (ยกเลิกแล้ว)
+              </span>
+            )}
+
+            {st === 'Pending' && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold inline-block bg-slate-100 text-slate-700">
+                Pending (รอดำเนินการ)
+              </span>
+            )}
+
+            {row.original.depositRefundedAmount !== undefined && row.original.depositRefundedAmount > 0 && (
+              <p className="text-[10px] text-emerald-700 font-semibold">
+                คืนมัดจำ: ฿{row.original.depositRefundedAmount.toLocaleString()}
+              </p>
+            )}
+            {row.original.depositForfeitedAmount !== undefined && row.original.depositForfeitedAmount > 0 && (
               <p className="text-[10px] text-rose-700 font-semibold">
                 ริบมัดจำ: ฿{row.original.depositForfeitedAmount.toLocaleString()}
               </p>
@@ -127,29 +211,65 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
     {
       id: 'actions',
       header: 'การจัดการ / สัญญา',
-      cell: ({ row }) => (
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={() => openPdfModal(row.original)}
-            className="flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>พิมพ์ / PDF</span>
-          </button>
-
-          {row.original.status !== 'Cancelled' && (
+      cell: ({ row }) => {
+        const b = row.original;
+        return (
+          <div className="flex items-center space-x-2">
             <button
               type="button"
-              onClick={() => setCancellingBooking(row.original)}
-              className="flex items-center space-x-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition cursor-pointer"
+              onClick={() => openPdfModal(b)}
+              className="flex items-center space-x-1 px-2 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition cursor-pointer"
             >
-              <XCircle className="w-3.5 h-3.5 text-rose-600" />
-              <span>ยกเลิกจอง</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>พิมพ์ PDF</span>
             </button>
-          )}
-        </div>
-      ),
+
+            {b.status === 'Cancellation Pending' && (
+              <button
+                type="button"
+                onClick={() => setCancellingBooking(b)}
+                className="flex items-center space-x-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold shadow-sm transition cursor-pointer animate-bounce"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>🔍 ตรวจสอบขอยกเลิก</span>
+              </button>
+            )}
+
+            {b.status === 'Cancelled (Refund Pending)' && (
+              <button
+                type="button"
+                onClick={() => setCancellingBooking(b)}
+                className="flex items-center space-x-1 px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-extrabold shadow-sm transition cursor-pointer"
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>💸 โอนคืนมัดจำ & แนบสลิป</span>
+              </button>
+            )}
+
+            {b.status === 'Cancelled (Refund Completed)' && (
+              <button
+                type="button"
+                onClick={() => setViewingSlipBooking(b)}
+                className="flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-extrabold transition cursor-pointer"
+              >
+                <Receipt className="w-3.5 h-3.5 text-emerald-600" />
+                <span>🧾 ดูสลิปคืนเงิน</span>
+              </button>
+            )}
+
+            {(b.status === 'Active' || b.status === 'Confirmed' || b.status === 'Pending') && (
+              <button
+                type="button"
+                onClick={() => setCancellingBooking(b)}
+                className="flex items-center space-x-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition cursor-pointer"
+              >
+                <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                <span>ยกเลิกจอง</span>
+              </button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -176,7 +296,7 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
     setAssignedVehicle(assigned);
   };
 
-  // Calculate rental days & dynamic rates (Daily / Weekly / Monthly)
+  // Calculate rental days & dynamic rates
   const rentDurationDays = Math.max(
     1,
     Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 3600 * 24))
@@ -185,8 +305,6 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
   const rawDailyRate = assignedVehicle ? assignedVehicle.dailyRate : 1500;
   const pricing = calculateRentalPricing(rawDailyRate, rentDurationDays);
   const baseAmount = pricing.baseAmount;
-  const dailyRate = pricing.effectiveDailyRate;
-
   const deposit = calculateSecurityDeposit(selectedCategory, currentCustomer?.tier);
 
   // Waterfall Coupon validation test
@@ -249,308 +367,387 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
 
   const handleCreateBooking = (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!currentCustomer) return;
-    if (currentCustomer.isBlacklisted) {
-      alert(`ไม่สามารถทำการจองได้ เนื่องจากลูกค้ารายนี้ติด Blacklist: ${currentCustomer.blacklistReason}`);
-      return;
-    }
-
     if (!assignedVehicle) {
-      alert('ไม่พบรถว่างในกลุ่มนี้ กรุณาเปลี่ยนกลุ่มรถ');
+      alert('ไม่พบรถว่างในหมวดหมู่นี้ กรุณาเลือกหมวดใหม่อื่น');
       return;
     }
 
-    const conflict = checkBookingConflict(assignedVehicle.id, startDate, endDate, bookings);
+    const conflict = checkBookingConflict(
+      bookings,
+      assignedVehicle.id,
+      startDate,
+      endDate
+    );
+
     if (conflict.hasConflict) {
-      alert(`⚠️ ระบบป้องกันการเช่ารถซ้อน!\n\nรถทะเบียน ${assignedVehicle.plateNumber} ${conflict.message}\n\nกรุณาเลือกระยะเวลาอื่นหรือเลือกรถคันอื่น`);
+      alert(`[Booking Conflict Warning] รถทะเบียน ${assignedVehicle.plateNumber} มีการจองซ้อนในช่วงเวลา ${conflict.conflictingBooking?.startDate} ถึง ${conflict.conflictingBooking?.endDate}`);
       return;
     }
 
-    const newBk: Booking = {
-      id: `bk-${Date.now().toString().slice(-5)}`,
-      bookingCode: `DRV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerId: currentCustomer.id,
-      customerName: currentCustomer.fullName,
+    const newBooking: Booking = {
+      id: `bk-${Date.now()}`,
+      bookingCode: `DRV-202607-${Math.floor(100 + Math.random() * 900)}`,
+      customerId: selectedCustomerId,
+      customerName: currentCustomer?.fullName || 'ลูกค้าทั่วไป',
       vehicleId: assignedVehicle.id,
       vehiclePlate: assignedVehicle.plateNumber,
-      vehicleModel: `${assignedVehicle.brand} ${assignedVehicle.model}`,
+      vehicleModel: assignedVehicle.brand + ' ' + assignedVehicle.model,
       vehicleCategory: selectedCategory,
       startDate,
       endDate,
       pickupBranch,
       dropoffBranch: pickupBranch,
       status: 'Confirmed',
-      dailyRate,
+      dailyRate: pricing.effectiveDailyRate,
       totalDays: rentDurationDays,
       baseAmount,
       appliedCouponCode: appliedCoupon?.code,
       discountAmount,
-      addons: [{ id: 'ad-1', name: 'ประกันภัย No-Deductible', dailyPrice: 300, selected: includeInsurance }],
+      addons: includeInsurance
+        ? [{ id: 'ad-1', name: 'ประกันภัย No-Deductible', dailyPrice: 300, selected: true }]
+        : [],
       addonsAmount,
       vatAmount,
       depositAmount: baseDeposit,
       grandTotal,
       pointsEarned,
       signatureDataUrl: signatureData,
-      contractSignedAt: new Date().toISOString(),
       createdDate: new Date().toISOString().split('T')[0],
     };
 
-    onAddBooking(newBk);
+    onAddBooking(newBooking);
     setShowNewBookingModal(false);
-    // Auto show contract preview
-    setActivePdfDoc({ type: 'Contract', booking: newBk });
   };
 
   return (
     <div className="space-y-6">
       
-      {/* Header Toolbar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="font-bold text-slate-900 text-lg">การจอง จัดทำสัญญาเช่า และออกเอกสาร (Booking & Contracts)</h2>
-            <p className="text-xs text-slate-500">ระบบ Smart Vehicle Assignment, ตรวจ Blacklist, คำนวณคูปอง และออก PDF</p>
+      {/* Top Header Card */}
+      <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900">
+                การจัดการการจอง & สัญญาเช่า (Bookings & Contracts)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                ระบบจัดการสัญญาจอง Smart Assignment รถยนต์ และอนุมัติการยกเลิกคืนเงินมัดจำ 2 ขั้นตอน
+              </p>
+            </div>
           </div>
         </div>
 
         <button
+          type="button"
           onClick={() => {
+            handleCategoryOrCustomerChange('Sedan 1.5L');
             setShowNewBookingModal(true);
-            handleCategoryOrCustomerChange(selectedCategory);
           }}
-          className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shadow-md shadow-indigo-600/20"
+          className="flex items-center justify-center space-x-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition shadow-md shadow-indigo-600/20 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>สร้างการจองใหม่ (New Booking)</span>
+          <span>สร้างสัญญาจองใหม่ (New Contract)</span>
         </button>
       </div>
 
-      {/* TanStack Bookings Table */}
+      {/* Filter Tabs Banner */}
+      <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => setFilterTab('All')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer whitespace-nowrap ${
+            filterTab === 'All'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <span>รายการจองทั้งหมด</span>
+          <span className="bg-slate-200 text-slate-800 text-[10px] px-1.5 py-0.2 rounded-md ml-1">
+            {bookings.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterTab('Cancellation Pending')}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold transition flex items-center space-x-1.5 cursor-pointer whitespace-nowrap ${
+            filterTab === 'Cancellation Pending'
+              ? 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-300'
+              : 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+          }`}
+        >
+          <Hourglass className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span>คำขอยกเลิกรอตรวจสอบ</span>
+          {pendingCancelCount > 0 && (
+            <span className="bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse ml-1">
+              {pendingCancelCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterTab('Refund Pending')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer whitespace-nowrap ${
+            filterTab === 'Refund Pending'
+              ? 'bg-sky-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <DollarSign className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+          <span>อนุมัติแล้วรอโอนคืนมัดจำ</span>
+          {refundPendingCount > 0 && (
+            <span className="bg-sky-200 text-sky-900 text-[10px] font-bold px-1.5 py-0.2 rounded-md ml-1">
+              {refundPendingCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterTab('Refund Completed')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer whitespace-nowrap ${
+            filterTab === 'Refund Completed'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span>คืนเงินสำเร็จเสร็จสิ้น</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterTab('Active')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer whitespace-nowrap ${
+            filterTab === 'Active'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <span>สัญญาจองที่ใช้งานอยู่</span>
+        </button>
+      </div>
+
+      {/* Bookings Data Table */}
       <TanStackDataTable
-        data={bookings}
         columns={bookingColumns}
-        title="ตารางสัญญาเช่ารถยนต์ (TanStack Data Grid)"
-        subtitle="รองรับการค้นหารายการจอง ค้นหาตามชื่อผู้เช่า/รุ่นรถ/รหัสการจอง และพิมพ์เอกสาร PDF ได้ทันที"
-        searchPlaceholder="ค้นหาตามรหัสการจอง ชื่อผู้เช่า หรือรุ่นรถ..."
-        exportFileName="booking-agreements.csv"
+        data={filteredBookings}
+        searchPlaceholder="ค้นหาด้วยรหัสจอง, ชื่อลูกค้า, รุ่นรถ, ทะเบียนรถ..."
       />
 
-      {/* New Booking Wizard Modal */}
+      {/* New Booking Modal */}
       {showNewBookingModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-          <form onSubmit={handleCreateBooking} className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
-            
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <div>
-                <span className="text-xs text-indigo-600 font-bold uppercase tracking-wider">Booking & Rental Contract Engine</span>
-                <h3 className="font-bold text-lg text-slate-900">ทำรายการจองและออกสัญญาเช่าใหม่</h3>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-2xl w-full overflow-hidden my-8 relative">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <h3 className="font-bold text-base">สร้างสัญญาจองใหม่ (New Contract Entry)</h3>
               <button
                 type="button"
                 onClick={() => setShowNewBookingModal(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer text-lg font-bold"
+                className="text-slate-400 hover:text-white p-1 rounded-full cursor-pointer"
               >
-                ✕
+                <XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            {/* 1. Customer Selection & Blacklist Check */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-800">1. เลือกลูกค้าผู้เช่า (Customer & Blacklist Risk Scan)</label>
-              <select
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="w-full p-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 bg-white"
-              >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.fullName} ({c.tier} Tier) - {c.isBlacklisted ? '🚨 BLACKLISTED' : 'พร้อมเช่า'}
-                  </option>
-                ))}
-              </select>
+            <form onSubmit={handleCreateBooking} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              
+              {/* Select Customer */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-800">
+                  1. เลือกผู้เช่า / ลูกค้า (Customer Selection)
+                </label>
+                <select
+                  value={selectedCustomerId}
+                  onChange={(e) => setSelectedCustomerId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                >
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.fullName} ({c.tier} Tier - แต้มสะสม {c.pointsBalance} pt) {c.isBlacklisted ? '🔴 [ติด BLACKLIST]' : ''}
+                    </option>
+                  ))}
+                </select>
 
-              {currentCustomer?.isBlacklisted && (
-                <div className="bg-rose-50 border border-rose-300 p-3 rounded-xl flex items-center space-x-2 text-rose-800 text-xs">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <div>
-                    <span className="font-bold">ปฏิเสธการทำรายการ (Blacklist Warning):</span>
-                    <p>{currentCustomer.blacklistReason}</p>
-                  </div>
-                </div>
-              )}
-            </div>
+                {currentCustomer?.isBlacklisted && (
+                  <p className="text-xs text-rose-600 font-bold bg-rose-50 p-2 rounded-lg border border-rose-200 mt-1">
+                    ⚠️ ลูกค้ารายนี้ติด BLACKLIST: {currentCustomer.blacklistReason} (ไม่อนุญาตให้ออกสัญญา)
+                  </p>
+                )}
+              </div>
 
-            {/* 2. Vehicle Category & Smart Assignment */}
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">2. เลือกรุ่มกลุ่มรถ (Category)</label>
+              {/* Select Category for Smart Assign */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-800">
+                  2. เลือกหมวดหมู่รถยนต์ (Smart Assignment Rule)
+                </label>
                 <select
                   value={selectedCategory}
                   onChange={(e) => handleCategoryOrCustomerChange(e.target.value as VehicleCategory)}
-                  className="w-full p-2 border border-slate-200 rounded-xl bg-white"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="Sedan 1.5L">Sedan 1.5L</option>
-                  <option value="Compact">Compact</option>
-                  <option value="SUV">SUV</option>
-                  <option value="Luxury">Luxury</option>
-                  <option value="Van">Van</option>
-                  <option value="EV / Eco">EV / Eco</option>
+                  <option value="Sedan 1.5L">Sedan 1.5L (เช่น City, Civic)</option>
+                  <option value="Compact">Compact (เช่น Yaris)</option>
+                  <option value="SUV">SUV (เช่น Fortuner)</option>
+                  <option value="Van">Van (เช่น Commuter)</option>
+                  <option value="Luxury">Luxury (เช่น BMW 530e)</option>
+                  <option value="EV / Eco">EV / Eco (เช่น BYD Atto 3)</option>
                 </select>
-              </div>
 
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">สาขารับ-คืนรถ</label>
-                <select
-                  value={pickupBranch}
-                  onChange={(e) => setPickupBranch(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-xl bg-white"
-                >
-                  <option value="สาขาสุวรรณภูมิ">สาขาสุวรรณภูมิ (Main Hub)</option>
-                  <option value="สาขาดอนเมือง">สาขาดอนเมือง</option>
-                  <option value="สาขาเชียงใหม่">สาขาเชียงใหม่</option>
-                  <option value="สาขาภูเก็ต">สาขาภูเก็ต</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Smart Vehicle Assignment Preview */}
-            {assignedVehicle ? (
-              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between text-xs text-emerald-900">
-                <div className="flex items-center space-x-2">
-                  <Zap className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <div>
-                    <span className="font-bold">Smart Auto-Assigned Vehicle:</span>
-                    <p>{assignedVehicle.brand} {assignedVehicle.model} (ทะเบียน: {assignedVehicle.plateNumber})</p>
+                {assignedVehicle ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs flex justify-between items-center text-emerald-900 mt-2">
+                    <div>
+                      <span className="font-extrabold text-emerald-950 block">
+                        🚗 ระบบจับคู่รถให้อัตโนมัติ: {assignedVehicle.brand} {assignedVehicle.model}
+                      </span>
+                      <span className="text-[11px] text-emerald-800">
+                        ทะเบียน: {assignedVehicle.plateNumber} | อัตราค่าเช่าฐาน: ฿{assignedVehicle.dailyRate.toLocaleString()}/วัน
+                      </span>
+                    </div>
+                    <span className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      พร้อมใช้งาน
+                    </span>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-slate-900">{assignedVehicle.dailyRate.toLocaleString()} THB/วัน</p>
-                  <p className="text-[10px] text-emerald-700">เลขไมล์ต่ำสุด: {assignedVehicle.currentOdometer.toLocaleString()} กม.</p>
-                </div>
+                ) : (
+                  <p className="text-xs text-rose-600 font-bold mt-1">
+                    ❌ ไม่มีรถว่างในหมวดหมู่นี้ในขณะนี้
+                  </p>
+                )}
               </div>
-            ) : (
-              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-amber-800 text-xs">
-                ไม่พบรถว่างในกลุ่มนี้
-              </div>
-            )}
 
-            {/* 3. Dates */}
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">วันเริ่มสัญญา</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-xl"
-                />
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">วันที่เริ่มเช่า</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">วันที่คืนรถ</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">วันสิ้นสุดสัญญา ({rentDurationDays} วัน)</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-xl"
-                />
-              </div>
-            </div>
 
-            {/* 4. Coupon Waterfall Validation Input */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-              <label className="block text-xs font-bold text-slate-800 flex items-center space-x-1">
-                <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                <span>รหัสคูปองส่วนลด (Coupon Engine Waterfall Rules)</span>
-              </label>
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  placeholder="เช่น DRIVE15, SAVE500, PAY2GET3"
-                  value={couponCodeInput}
-                  onChange={(e) => setCouponCodeInput(e.target.value)}
-                  className="flex-1 p-2 border border-slate-200 rounded-xl text-xs uppercase font-mono"
-                />
+              {/* Coupon Waterfall test input */}
+              <div className="space-y-1 border-t border-slate-200 pt-3">
+                <label className="block text-xs font-bold text-slate-800">
+                  3. คูปองส่วนลดพิเศษ (Waterfall Validation Rule Test)
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    placeholder="ใส่รหัส เช่น DRIVE15, SAVE500, PAY2GET3..."
+                    value={couponCodeInput}
+                    onChange={(e) => setCouponCodeInput(e.target.value)}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800"
+                  >
+                    ตรวจสอบคูปอง
+                  </button>
+                </div>
+
+                {couponError && (
+                  <p className="text-xs text-rose-600 font-semibold mt-1 bg-rose-50 p-2 rounded-lg border border-rose-200">
+                    {couponError}
+                  </p>
+                )}
+                {couponSuccessMsg && (
+                  <p className="text-xs text-emerald-700 font-bold mt-1 bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                    {couponSuccessMsg}
+                  </p>
+                )}
+              </div>
+
+              {/* Addons */}
+              <div className="space-y-1">
+                <label className="flex items-center space-x-2 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeInsurance}
+                    onChange={(e) => setIncludeInsurance(e.target.checked)}
+                    className="rounded text-indigo-600"
+                  />
+                  <span>เพิ่มประกันภัย No-Deductible Waiver (300 THB/วัน)</span>
+                </label>
+              </div>
+
+              {/* Dynamic Calculation summary */}
+              <div className="bg-slate-900 text-white rounded-2xl p-4 space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span>ค่าเช่าฐาน ({rentDurationDays} วัน @ ฿{pricing.effectiveDailyRate.toLocaleString()}/วัน):</span>
+                  <span>{baseAmount.toLocaleString()} THB</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-400 font-bold">
+                    <span>ส่วนลดคูปอง ({appliedCoupon?.code}):</span>
+                    <span>-{discountAmount.toLocaleString()} THB</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-300">
+                  <span>ประกันภัย No-Deductible (300 THB/วัน):</span>
+                  <span>{addonsAmount.toLocaleString()} THB</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>ภาษีมูลค่าเพิ่ม VAT 7%:</span>
+                  <span>{vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB</span>
+                </div>
+                <div className="border-t border-slate-700 pt-2 flex justify-between font-extrabold text-sm text-white">
+                  <span>ยอดเงินชำระสุทธิ (Grand Total):</span>
+                  <span className="text-indigo-300">{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB</span>
+                </div>
+                <div className="flex justify-between text-[11px] text-amber-300 pt-1">
+                  <span>เงินมัดจำ (Security Deposit - Tier Privilege):</span>
+                  <span>{baseDeposit > 0 ? `${baseDeposit.toLocaleString()} THB` : 'ยกเว้นมัดจำ (Platinum Privilege)'}</span>
+                </div>
+                <div className="text-[10px] text-slate-400 pt-1">
+                  * สัญญานี้จะได้รับคะแนนสะสม loyalty <strong className="text-amber-400">+{pointsEarned} คะแนน</strong>
+                </div>
+              </div>
+
+              {/* Digital Signature Pad */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-800">
+                  5. ลงลายมือชื่อผู้เช่าในสัญญาดิจิทัล (Digital Signature)
+                </label>
+                <SignaturePad onSave={(data) => setSignatureData(data)} />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={handleApplyCoupon}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                  onClick={() => setShowNewBookingModal(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-xs text-slate-600 cursor-pointer hover:bg-slate-100"
                 >
-                  ตรวจสอบเงื่อนไข
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={currentCustomer?.isBlacklisted || !assignedVehicle}
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer disabled:opacity-50"
+                >
+                  อนุมัติสัญญาเช่า & ออกเอกสาร
                 </button>
               </div>
 
-              {couponError && (
-                <p className="text-xs text-rose-600 font-medium">{couponError}</p>
-              )}
-              {couponSuccessMsg && (
-                <p className="text-xs text-emerald-600 font-bold">{couponSuccessMsg}</p>
-              )}
-            </div>
-
-            {/* Price Summary Calculation */}
-            <div className="bg-slate-900 text-white p-4 rounded-xl text-xs space-y-2">
-              <div className="flex justify-between text-slate-300">
-                <span>ค่าเช่าฐาน ({rentDurationDays} วัน x {dailyRate.toLocaleString()} THB):</span>
-                <span>{baseAmount.toLocaleString()} THB</span>
-              </div>
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-emerald-400 font-bold">
-                  <span>ส่วนลดคูปอง ({appliedCoupon?.code}):</span>
-                  <span>-{discountAmount.toLocaleString()} THB</span>
-                </div>
-              )}
-              <div className="flex justify-between text-slate-300">
-                <span>ประกันภัย No-Deductible (300 THB/วัน):</span>
-                <span>{addonsAmount.toLocaleString()} THB</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>ภาษีมูลค่าเพิ่ม VAT 7%:</span>
-                <span>{vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB</span>
-              </div>
-              <div className="border-t border-slate-700 pt-2 flex justify-between font-extrabold text-sm text-white">
-                <span>ยอดเงินชำระสุทธิ (Grand Total):</span>
-                <span className="text-indigo-300">{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB</span>
-              </div>
-              <div className="flex justify-between text-[11px] text-amber-300 pt-1">
-                <span>เงินมัดจำ (Security Deposit - Tier Privilege):</span>
-                <span>{baseDeposit > 0 ? `${baseDeposit.toLocaleString()} THB` : 'ยกเว้นมัดจำ (Platinum Privilege)'}</span>
-              </div>
-              <div className="text-[10px] text-slate-400 pt-1">
-                * สัญญานี้จะได้รับคะแนนสะสม loyalty <strong className="text-amber-400">+{pointsEarned} คะแนน</strong> (อัตราสะสม 100 บาท = 1 คะแนน x Tier Multiplier)
-              </div>
-            </div>
-
-            {/* Digital Signature Pad */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-800">
-                5. ลงลายมือชื่อผู้เช่าในสัญญาดิจิทัล (Digital Signature)
-              </label>
-              <SignaturePad onSave={(data) => setSignatureData(data)} />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setShowNewBookingModal(false)}
-                className="px-4 py-2 border border-slate-200 rounded-xl text-xs text-slate-600 cursor-pointer hover:bg-slate-100"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="submit"
-                disabled={currentCustomer?.isBlacklisted || !assignedVehicle}
-                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer disabled:opacity-50"
-              >
-                อนุมัติสัญญาเช่า & ออกเอกสาร
-              </button>
-            </div>
-
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
@@ -565,17 +762,29 @@ export const BookingModule: React.FC<BookingModuleProps> = ({
         />
       )}
 
-      {/* Cancel Booking & Deposit Forfeiture Modal */}
+      {/* Admin Cancel Booking & Approval Modal */}
       {cancellingBooking && (
         <CancelBookingModal
           isOpen={!!cancellingBooking}
           booking={cancellingBooking}
           customer={customers.find((c) => c.id === cancellingBooking.customerId)}
           onClose={() => setCancellingBooking(null)}
-          onConfirmCancel={(bookingId, forfeitAmount, reason) => {
-            onCancelBooking(bookingId, forfeitAmount, reason);
+          onApproveCancellation={(id, forfeit, refund, reason, note) => {
+            onApproveCancellation(id, forfeit, refund, reason, note);
+          }}
+          onCompleteRefund={(id, slipUrl, note) => {
+            onCompleteRefund(id, slipUrl, note);
             setCancellingBooking(null);
           }}
+        />
+      )}
+
+      {/* Refund Slip Viewer Modal */}
+      {viewingSlipBooking && (
+        <RefundSlipModal
+          isOpen={!!viewingSlipBooking}
+          booking={viewingSlipBooking}
+          onClose={() => setViewingSlipBooking(null)}
         />
       )}
 

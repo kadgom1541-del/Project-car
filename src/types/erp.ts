@@ -46,6 +46,7 @@ export interface Vehicle {
     lastUpdated: string;
   };
   imageUrl: string;
+  images?: string[];
   purchasePrice: number;
   salvageValue: number;
   usefulLifeYears: number;
@@ -94,7 +95,15 @@ export interface Customer {
   registeredDate: string;
 }
 
-export type BookingStatus = 'Pending' | 'Confirmed' | 'Active' | 'Completed' | 'Cancelled';
+export type BookingStatus =
+  | 'Pending'
+  | 'Confirmed'
+  | 'Active'
+  | 'Completed'
+  | 'Cancelled'
+  | 'Cancellation Pending'
+  | 'Cancelled (Refund Pending)'
+  | 'Cancelled (Refund Completed)';
 
 export interface BookingAddon {
   id: string;
@@ -142,8 +151,17 @@ export interface Booking {
   
   cancelReason?: string;
   cancelledAt?: string;
+  cancellationRequestedAt?: string;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
   depositForfeitedAmount?: number;
   depositRefundedAmount?: number;
+  refundSuggestedAmount?: number;
+  refundPolicyNote?: string;
+  refundAdminNote?: string;
+  refundSlipUrl?: string;
+  refundCompletedAt?: string;
 }
 
 export interface DamageMark {

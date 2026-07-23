@@ -2,13 +2,31 @@ import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
 import { Booking } from '../../types/erp';
 
+// Register Thai Font (Sarabun) for @react-pdf/renderer
+Font.register({
+  family: 'Sarabun',
+  fonts: [
+    {
+      src: 'https://raw.githubusercontent.com/google/fonts/main/ofl/sarabun/Sarabun-Regular.ttf',
+      fontWeight: 'normal',
+    },
+    {
+      src: 'https://raw.githubusercontent.com/google/fonts/main/ofl/sarabun/Sarabun-Bold.ttf',
+      fontWeight: 'bold',
+    },
+  ],
+});
+
+// Disable word hyphenation for proper Thai character rendering
+Font.registerHyphenationCallback((word) => [word]);
+
 // Create styles for React PDF
 const styles = StyleSheet.create({
   page: {
     padding: 30,
     fontSize: 10,
     color: '#1e293b',
-    fontFamily: 'Helvetica',
+    fontFamily: 'Sarabun',
   },
   header: {
     flexDirection: 'row',
@@ -29,7 +47,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   docTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#0f172a',
     textAlign: 'right',
@@ -41,7 +59,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   section: {
-    marginBottom: 12,
+    marginBottom: 10,
     padding: 10,
     backgroundColor: '#f8fafc',
     borderRadius: 6,
@@ -69,7 +87,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   table: {
-    marginTop: 10,
+    marginTop: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 4,
@@ -87,30 +105,40 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  col1: { width: '40%' },
-  col2: { width: '20%', textAlign: 'center' },
+  col1: { width: '45%' },
+  col2: { width: '15%', textAlign: 'center' },
   col3: { width: '20%', textAlign: 'right' },
   col4: { width: '20%', textAlign: 'right' },
+  summaryContainer: {
+    marginTop: 10,
+    alignSelf: 'flex-end',
+    width: '55%',
+    backgroundColor: '#f8fafc',
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
   footer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 25,
     left: 30,
     right: 30,
     borderTopWidth: 1,
     borderTopColor: '#cbd5e1',
-    paddingTop: 10,
+    paddingTop: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     fontSize: 8,
     color: '#94a3b8',
   },
   signatureBox: {
-    marginTop: 30,
+    marginTop: 25,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   sigLine: {
-    width: 150,
+    width: 160,
     borderTopWidth: 1,
     borderTopColor: '#94a3b8',
     textAlign: 'center',
@@ -135,6 +163,8 @@ export const RentalPdfDocument: React.FC<RentalPdfDocumentProps> = ({
     invoice: 'ใบแจ้งหนี้ / ใบกำกับภาษี IFRS 15 (Tax Invoice)',
   };
 
+  const baseRate = booking.dailyRate || Math.round((booking.baseAmount || booking.grandTotal) / (booking.totalDays || 1));
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -150,7 +180,7 @@ export const RentalPdfDocument: React.FC<RentalPdfDocumentProps> = ({
           <View>
             <Text style={styles.docTitle}>{titleMap[docType]}</Text>
             <Text style={styles.docSub}>Ref ID: {booking.bookingCode || booking.id}</Text>
-            <Text style={styles.docSub}>Date: {booking.createdDate || '2026-07-21'}</Text>
+            <Text style={styles.docSub}>Date: {booking.createdDate || new Date().toISOString().split('T')[0]}</Text>
           </View>
         </View>
 
@@ -175,16 +205,16 @@ export const RentalPdfDocument: React.FC<RentalPdfDocumentProps> = ({
           </View>
         </View>
 
-        {/* Rental Period */}
+        {/* Rental Schedule */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>กำหนดเวลาเช่า (Rental Schedule)</Text>
           <View style={styles.row}>
             <Text style={styles.label}>วันเวลารับรถ (Pick-up):</Text>
-            <Text style={styles.value}>{booking.startDate} ({booking.pickupBranch})</Text>
+            <Text style={styles.value}>{booking.startDate} ({booking.pickupBranch || 'สาขาสุวรรณภูมิ'})</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>วันเวลาคืนรถ (Return):</Text>
-            <Text style={styles.value}>{booking.endDate} ({booking.dropoffBranch})</Text>
+            <Text style={styles.value}>{booking.endDate} ({booking.dropoffBranch || 'สาขาสุวรรณภูมิ'})</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>จำนวนวันเช่ารวม (Total Days):</Text>
@@ -196,7 +226,7 @@ export const RentalPdfDocument: React.FC<RentalPdfDocumentProps> = ({
         <View style={styles.table}>
           <View style={styles.tableHeader}>
             <Text style={styles.col1}>รายการ (Description)</Text>
-            <Text style={styles.col2}>จำนวนวัน (Days)</Text>
+            <Text style={styles.col2}>จำนวนวัน</Text>
             <Text style={styles.col3}>ราคา/วัน (Rate)</Text>
             <Text style={styles.col4}>จำนวนเงิน (THB)</Text>
           </View>
@@ -204,33 +234,59 @@ export const RentalPdfDocument: React.FC<RentalPdfDocumentProps> = ({
           <View style={styles.tableRow}>
             <Text style={styles.col1}>ค่าเช่ารถยนต์ {booking.vehicleModel}</Text>
             <Text style={styles.col2}>{booking.totalDays}</Text>
-            <Text style={styles.col3}>
-              {Math.round((booking.grandTotal || 0) / (booking.totalDays || 1)).toLocaleString()}
-            </Text>
-            <Text style={styles.col4}>{(booking.grandTotal || 0).toLocaleString()} บาท</Text>
+            <Text style={styles.col3}>{baseRate.toLocaleString()}</Text>
+            <Text style={styles.col4}>{(booking.baseAmount || (baseRate * booking.totalDays)).toLocaleString()}</Text>
           </View>
+
+          {booking.discountAmount > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.col1}>ส่วนลดคูปอง ({booking.appliedCouponCode || 'SPECIAL'})</Text>
+              <Text style={styles.col2}>-</Text>
+              <Text style={styles.col3}>-</Text>
+              <Text style={styles.col4}>-{booking.discountAmount.toLocaleString()}</Text>
+            </View>
+          )}
+
+          {booking.addonsAmount > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.col1}>ประกันภัย No-Deductible Waiver</Text>
+              <Text style={styles.col2}>{booking.totalDays}</Text>
+              <Text style={styles.col3}>300</Text>
+              <Text style={styles.col4}>{booking.addonsAmount.toLocaleString()}</Text>
+            </View>
+          )}
 
           {booking.depositAmount > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.col1}>เงินประกันความเสียหาย (Security Deposit - Refundable)</Text>
               <Text style={styles.col2}>1</Text>
               <Text style={styles.col3}>{booking.depositAmount.toLocaleString()}</Text>
-              <Text style={styles.col4}>{booking.depositAmount.toLocaleString()} บาท</Text>
+              <Text style={styles.col4}>{booking.depositAmount.toLocaleString()}</Text>
             </View>
           )}
         </View>
 
         {/* Summary Totals */}
-        <View style={{ marginTop: 15, alignSelf: 'flex-end', width: '50%' }}>
+        <View style={styles.summaryContainer}>
           <View style={styles.row}>
-            <Text style={styles.label}>รวมทั้งสิ้น (Grand Total):</Text>
-            <Text style={styles.value}>
+            <Text style={styles.label}>ยอดค่าเช่าสุทธิ (Rental Total):</Text>
+            <Text style={styles.value}>{(booking.grandTotal || 0).toLocaleString()} THB</Text>
+          </View>
+          {booking.depositAmount > 0 && (
+            <View style={styles.row}>
+              <Text style={styles.label}>เงินมัดจำคืนได้ (Refundable Deposit):</Text>
+              <Text style={styles.value}>{booking.depositAmount.toLocaleString()} THB</Text>
+            </View>
+          )}
+          <View style={[styles.row, { borderTopWidth: 1, borderTopColor: '#cbd5e1', paddingTop: 4, marginTop: 4 }]}>
+            <Text style={[styles.label, { fontWeight: 'bold', color: '#0f172a' }]}>รวมเงินที่ชำระ (Grand Total):</Text>
+            <Text style={[styles.value, { color: '#059669', fontSize: 11 }]}>
               {((booking.grandTotal || 0) + (booking.depositAmount || 0)).toLocaleString()} THB
             </Text>
           </View>
-          <View style={styles.row}>
+          <View style={[styles.row, { marginTop: 2 }]}>
             <Text style={styles.label}>สถานะสัญญา (Status):</Text>
-            <Text style={{ ...styles.value, color: '#059669' }}>
+            <Text style={[styles.value, { color: booking.status.includes('Cancelled') ? '#dc2626' : '#059669' }]}>
               {booking.status}
             </Text>
           </View>
@@ -239,21 +295,22 @@ export const RentalPdfDocument: React.FC<RentalPdfDocumentProps> = ({
         {/* Signatures */}
         <View style={styles.signatureBox}>
           <View>
-            <Text style={{ height: 25 }} />
+            <Text style={{ height: 20 }} />
             <Text style={styles.sigLine}>ลงชื่อผู้เช่า (Customer Signature)</Text>
           </View>
           <View>
-            <Text style={{ height: 25 }} />
+            <Text style={{ height: 20 }} />
             <Text style={styles.sigLine}>ลงชื่อเจ้าหน้าที่ส่งมอบ (DriveERP Staff)</Text>
           </View>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text>DriveERP System Document - Generated Automatically</Text>
+          <Text>DriveERP System Document - Generated Automatically with Thai Font Support</Text>
           <Text>Page 1 of 1</Text>
         </View>
       </Page>
     </Document>
   );
 };
+
